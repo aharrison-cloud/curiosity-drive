@@ -1,1202 +1,211 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>NLCS Jeju – Curiosity Drive</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet"/>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js"></script>
-  <!-- Google Identity Services -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <style>
-    body{font-family:'Nunito',sans-serif;}
-    h1,h2,h3,.font-serif{font-family:'Playfair Display',serif;}
-    ::-webkit-scrollbar{width:6px;height:6px;}
-    ::-webkit-scrollbar-track{background:#f1f5f9;}
-    ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px;}
-    .rotate-y-180{transform:rotateY(180deg);}
-    .transform-style-3d{transform-style:preserve-3d;}
-    .backface-hidden{backface-visibility:hidden;}
-    .perspective-1000{perspective:1000px;}
-    #g_id_onload{display:none;}
-  </style>
-</head>
-<body class="bg-slate-50 text-slate-900 min-h-screen">
-<div id="root"></div>
+/ ============================================================
+// NLCS JEJU CURIOSITY DRIVE — Google Apps Script Backend
+// Paste this entire file into your Apps Script project
+// ============================================================
 
-<script type="text/babel">
-const { useState, useEffect, useRef, useMemo, useCallback } = React;
-const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = Recharts;
+const SHEET_NAME_STUDENTS = 'Students';
+const SHEET_NAME_ACTIVITY  = 'ActivityLog';
+const SHEET_NAME_SESSIONS  = 'LiveSessions';
 
-// ═══════════════════════════════════════════════════════════════
-// ── CONFIGURATION — Fill these in after setup ──────────────────
-// ═══════════════════════════════════════════════════════════════
-const CONFIG = {
-  // From Google Cloud Console → APIs & Services → Credentials
-  GOOGLE_CLIENT_ID: '594310820254-vtdhfitril7tqh6csj9vn5uakpj3s7fm.apps.googleusercontent.com',
-
-  // Your school's Google Workspace domain (students must use this)
-  ALLOWED_DOMAIN: 'nlcsjeju.kr',
-
-  // From Apps Script → Deploy → Manage deployments → Web app URL
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxVn4chHjFrtCJ3yxuNIRC5ZjBd90BPPNF5RjSsLrHsuWmBvXJ-DzhrraATGlW1or08XQ/exec',
-
-  // Your Gemini API Key (for AI features)
-  GEMINI_API_KEY: 'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY',
-};
-
-// ═══════════════════════════════════════════════════════════════
-// ── ENUMS & CONSTANTS ──────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-const UserRole   = { STUDENT:'STUDENT', TEACHER:'TEACHER' };
-const QuizMode   = { CONTENT:'CONTENT', COMMUNICATION:'COMMUNICATION', SCIENTIFIC:'SCIENTIFIC', DATA_ANALYSIS:'DATA_ANALYSIS' };
-const AppView    = { DASHBOARD:'DASHBOARD', TOPIC_SELECT:'TOPIC_SELECT', QUIZ:'QUIZ', TEXTBOOK:'TEXTBOOK', LIVE_SESSION:'LIVE_SESSION', STUDENT_LIVE:'STUDENT_LIVE', PROFILE:'PROFILE' };
-const GradeBand  = { EMERGING:'Emerging (3)', EXPECTED_MINUS:'Expected - (4)', EXPECTED:'Expected (5)', EXPECTED_PLUS:'Expected + (6)', EXCEEDING:'Exceeding (7)' };
-
-const GRADE_COLOR = {
-  [GradeBand.EMERGING]:       'text-red-700 bg-red-100 border-red-200',
-  [GradeBand.EXPECTED_MINUS]: 'text-orange-700 bg-orange-100 border-orange-200',
-  [GradeBand.EXPECTED]:       'text-yellow-700 bg-yellow-100 border-yellow-200',
-  [GradeBand.EXPECTED_PLUS]:  'text-blue-700 bg-blue-100 border-blue-200',
-  [GradeBand.EXCEEDING]:      'text-emerald-700 bg-emerald-100 border-emerald-200',
-};
-
-// Teacher email addresses — anyone in this list gets the teacher view
-const TEACHER_EMAILS = [
-  'aharrison@nlcsjeju.kr',
-  // Add more teacher emails here
-];
-
-const TOPICS = [
-  { id:'y5-bio',   name:'Living Things & Habitats',    year:5, icon:'🌿', description:'Life cycles of mammals, amphibians, insects, birds, and reproduction.',
-    curriculumPoints:['Life cycles of mammal, amphibian, insect, bird','Reproduction in plants and animals','Naturalists like David Attenborough'],
-    vocabulary:[{term:'Metamorphosis',definition:'A process where an animal physically develops after birth or hatching.'},{term:'Gestation',definition:'The time a baby grows inside its mother before being born.'},{term:'Asexual reproduction',definition:'Reproduction requiring only one parent, common in some plants.'},{term:'Pollination',definition:'Transfer of pollen to allow fertilization in plants.'}],
-    videoSearchTerm:'KS2 Science Life Cycles mammals amphibians insects birds', studyUrl:'https://www.bbc.co.uk/bitesize/topics/zgss9j6', phetUrl:'https://phet.colorado.edu/sims/html/natural-selection/latest/natural-selection_en.html'},
-  { id:'y5-forces',name:'Forces',                       year:5, icon:'🧲', description:'Gravity, air/water resistance, friction, levers, pulleys, and gears.',
-    curriculumPoints:['Gravity','Air resistance','Water resistance','Friction','Levers, pulleys and gears'],
-    vocabulary:[{term:'Air Resistance',definition:'A force that acts against objects moving through the air.'},{term:'Gravity',definition:'The force that pulls objects towards the centre of the Earth.'},{term:'Friction',definition:'A force between two surfaces rubbing together, slowing them down.'},{term:'Lever',definition:'A simple machine consisting of a beam and a pivot (fulcrum).'}],
-    videoSearchTerm:'KS2 Science Forces Gravity Friction Air Resistance', studyUrl:'https://www.bbc.co.uk/bitesize/topics/znmmn39', phetUrl:'https://phet.colorado.edu/sims/html/forces-and-motion-basics/latest/forces-and-motion-basics_en.html'},
-  { id:'y5-mat',   name:'Properties of Materials',      year:5, icon:'🧪', description:'Hardness, solubility, conductivity, reversible and irreversible changes.',
-    curriculumPoints:['Hardness, solubility, transparency, conductivity','Dissolving and recovering substances','Filtering, sieving, evaporating','Reversible vs Irreversible changes'],
-    vocabulary:[{term:'Soluble',definition:'Able to be dissolved, especially in water.'},{term:'Conductor',definition:'A material that allows heat or electricity to pass through it easily.'},{term:'Irreversible change',definition:'A change that cannot be undone (e.g. burning wood).'},{term:'Solution',definition:'A mixture where a solid has dissolved in a liquid.'}],
-    videoSearchTerm:'KS2 Science Properties of Materials Reversible Changes', studyUrl:'https://www.bbc.co.uk/bitesize/topics/zryycdm', phetUrl:'https://phet.colorado.edu/sims/html/concentration/latest/concentration_en.html'},
-  { id:'y5-space', name:'Earth & Space',                 year:5, icon:'🪐', description:'Planets, Sun, Moon, rotation, day and night.',
-    curriculumPoints:['Movement of Earth/Planets relative to Sun','Movement of Moon','Spherical bodies','Earth rotation and day/night'],
-    vocabulary:[{term:'Orbit',definition:'The curved path of a celestial object around a star, planet, or moon.'},{term:'Rotation',definition:'The action of rotating around an axis or centre (causes Day/Night).'},{term:'Solar System',definition:'The collection of eight planets and their moons in orbit around the Sun.'},{term:'Heliocentric',definition:'The model where the Earth and planets revolve around the Sun.'}],
-    videoSearchTerm:'KS2 Science Earth and Space Solar System', studyUrl:'https://www.bbc.co.uk/bitesize/topics/zkvv4wx', phetUrl:'https://phet.colorado.edu/sims/html/gravity-and-orbits/latest/gravity-and-orbits_en.html'},
-  { id:'y6-bio-1', name:'Living Things & Classification',year:6, icon:'🦠', description:'Classification including micro-organisms, plants and animals.',
-    curriculumPoints:['Classifying broad groups','Micro-organisms','Carl Linnaeus','Vertebrates and Invertebrates'],
-    vocabulary:[{term:'Classification',definition:'Grouping living things based on their similarities and differences.'},{term:'Vertebrate',definition:'An animal that has a backbone.'},{term:'Micro-organism',definition:'A very small living thing only seen with a microscope.'},{term:'Carl Linnaeus',definition:'A scientist famous for creating a system to name and classify living things.'}],
-    videoSearchTerm:'KS2 Science Classification Living Things', studyUrl:'https://www.bbc.co.uk/bitesize/topics/zn22pv4'},
-  { id:'y6-bio-2', name:'Animals (Humans)',               year:6, icon:'🫀', description:'Circulatory system, diet, exercise, drugs, and lifestyle.',
-    curriculumPoints:['Circulatory system functions','Heart, blood vessels, blood','Impact of diet, exercise, drugs','Transport of nutrients'],
-    vocabulary:[{term:'Circulatory System',definition:'The system that moves blood, nutrients, and gases around the body.'},{term:'Artery',definition:'A blood vessel that carries oxygenated blood away from the heart.'},{term:'Vein',definition:'A blood vessel that carries blood back to the heart.'},{term:'Nutrients',definition:'Substances that provide nourishment essential for growth and maintenance of life.'}],
-    videoSearchTerm:'KS2 Science Circulatory System Heart', studyUrl:'https://www.bbc.co.uk/bitesize/topics/zwdr6yc'},
-  { id:'y6-evo',   name:'Evolution & Inheritance',        year:6, icon:'🦕', description:'Fossils, offspring variation, adaptation and evolution.',
-    curriculumPoints:['Changes over time (Fossils)','Offspring variation','Adaptation leading to evolution','Charles Darwin & Mary Anning'],
-    vocabulary:[{term:'Evolution',definition:'The process by which different kinds of living organisms develop from earlier forms.'},{term:'Adaptation',definition:'A change by which an organism becomes better suited to its environment.'},{term:'Inheritance',definition:'When characteristics are passed on from parents to offspring.'},{term:'Fossil',definition:'The remains or impression of a prehistoric organism preserved in petrified form.'}],
-    videoSearchTerm:'KS2 Science Evolution and Inheritance', studyUrl:'https://www.bbc.co.uk/bitesize/topics/zvhhvcw', phetUrl:'https://phet.colorado.edu/sims/html/natural-selection/latest/natural-selection_en.html'},
-  { id:'y6-light', name:'Light',                          year:6, icon:'💡', description:'Light travelling in straight lines, reflection, and shadows.',
-    curriculumPoints:['Light travels in straight lines','Objects seen because they give out/reflect light','Shadows same shape as object'],
-    vocabulary:[{term:'Reflection',definition:'The throwing back by a surface of light without absorbing it.'},{term:'Refraction',definition:'The bending of light as it passes from one transparent substance into another.'},{term:'Opaque',definition:'Not able to be seen through; not transparent.'},{term:'Spectrum',definition:'A band of colours, as seen in a rainbow, produced by separation of light.'}],
-    videoSearchTerm:'KS2 Science Light reflection refraction shadows', studyUrl:'https://www.bbc.co.uk/bitesize/topics/zbssgk7', phetUrl:'https://phet.colorado.edu/sims/html/bending-light/latest/bending-light_en.html'},
-  { id:'y6-elec',  name:'Electricity',                    year:6, icon:'⚡', description:'Series circuits, brightness, voltage, and circuit symbols.',
-    curriculumPoints:['Brightness/Volume vs Voltage','Function of components','Circuit symbols'],
-    vocabulary:[{term:'Voltage',definition:'An electromotive force or potential difference expressed in volts.'},{term:'Circuit',definition:'A complete and closed path around which a circulating electric current can flow.'},{term:'Conductor',definition:'Material that allows electric current to flow easily (e.g. Copper).'},{term:'Insulator',definition:'Material that does not allow electric current to flow (e.g. Plastic).'}],
-    videoSearchTerm:'KS2 Science Electricity Circuits Voltage', studyUrl:'https://www.bbc.co.uk/bitesize/topics/zj44jxs', phetUrl:'https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_en.html'},
-];
-
-const MOCK_DRIVE_FILES = [
-  {id:'d1',name:'Year 6 - Light & Shadows.ppt',type:'presentation',updatedAt:'2 hours ago',content:'Light travels in straight lines. Shadows are formed when an opaque object blocks light. We see things because light reflects off them into our eyes.'},
-  {id:'d2',name:'Year 5 - Forces Intro.gslides',type:'presentation',updatedAt:'1 day ago',content:'Forces are pushes or pulls. Gravity pulls things down. Friction slows things down. Air resistance acts against movement in air.'},
-  {id:'d3',name:'Circulatory System Notes.docx',type:'document',updatedAt:'3 days ago',content:'The heart is a pump. It has 4 chambers: Right Atrium, Right Ventricle, Left Atrium, Left Ventricle. Arteries carry blood away, veins carry it back.'},
-];
-
-// ═══════════════════════════════════════════════════════════════
-// ── APPS SCRIPT API ────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-const api = {
-  async get(action, params = {}) {
-    if (!CONFIG.APPS_SCRIPT_URL || CONFIG.APPS_SCRIPT_URL.startsWith('YOUR_')) return null;
-    const qs = new URLSearchParams({ action, ...params }).toString();
-    const res = await fetch(`${CONFIG.APPS_SCRIPT_URL}?${qs}`);
-    return res.json();
-  },
-  async post(action, data) {
-    if (!CONFIG.APPS_SCRIPT_URL || CONFIG.APPS_SCRIPT_URL.startsWith('YOUR_')) return null;
-    const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ action, data })
-    });
-    return res.json();
-  },
-  async getStudent(email)      { return this.get('getStudent', { email }); },
-  async getAllStudents()        { return this.get('getAllStudents'); },
-  async upsertStudent(data)    { return this.post('upsertStudent', data); },
-  async logActivity(data)      { return this.post('logActivity', data); },
-  async getActivityLog(email)  { return this.get('getActivityLog', { email }); },
-  async getLiveSession()       { return this.get('getLiveSession'); },
-  async updateLiveSession(d)   { return this.post('updateLiveSession', d); },
-};
-
-// ═══════════════════════════════════════════════════════════════
-// ── GEMINI AI ──────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-async function callGemini(prompt, jsonSchema = null) {
-  const key = CONFIG.GEMINI_API_KEY;
-  if (!key || key.startsWith('YOUR_')) return null;
-  const body = { contents:[{parts:[{text:prompt}]}] };
-  if (jsonSchema) body.generationConfig = { responseMimeType:'application/json', responseSchema:jsonSchema };
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
-    { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-  if (!res.ok) throw new Error(`Gemini ${res.status}`);
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  if (jsonSchema) { try { return JSON.parse(text); } catch { return null; } }
-  return text;
+// ── CORS helper ──────────────────────────────────────────────
+function setCORSHeaders(output) {
+  return output
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
-const AI = {
-  async generateQuestion(topic, mode, difficulty) {
-    const modeInstr = { CONTENT:'Test factual knowledge and conceptual understanding. Prefer MULTIPLE_CHOICE.', COMMUNICATION:'MUST be OPEN_TEXT. Ask student to explain a concept in 3-5 sentences using scientific vocabulary. E.g. "Explain how..."', SCIENTIFIC:'Focus on Working Scientifically: fair tests, variables (independent/dependent/control), interpreting data, reliability. Prefer MULTIPLE_CHOICE.', DATA_ANALYSIS:'Provide a tableData field with headers and rows. Ask student to interpret the data — spot a pattern, anomaly, or calculate a mean. MULTIPLE_CHOICE.' }[mode];
-    const prompt = `Generate a UK National Curriculum Year ${topic.year} science question about "${topic.name}".
-Curriculum points: ${topic.curriculumPoints.join(', ')}. Difficulty: ${difficulty}.
-Mode: ${modeInstr}. British English. Return ONLY valid JSON.`;
-    return callGemini(prompt, {type:'OBJECT',properties:{type:{type:'STRING',enum:['MULTIPLE_CHOICE','OPEN_TEXT']},text:{type:'STRING'},options:{type:'ARRAY',items:{type:'STRING'}},correctAnswer:{type:'STRING'},explanation:{type:'STRING'},hint:{type:'STRING'},tableData:{type:'OBJECT',properties:{headers:{type:'ARRAY',items:{type:'STRING'}},rows:{type:'ARRAY',items:{type:'ARRAY',items:{type:'STRING'}}}}},videoSearchTerm:{type:'STRING'},difficulty:{type:'STRING',enum:['easy','medium','hard']}},required:['type','text','explanation','hint']});
-  },
-  async evaluateAnswer(question, answer) {
-    const commInstr = question.mode === 'COMMUNICATION' ? 'Give feedback as "🧪 Science: [comment]. ✍️ Writing Tip: [vocabulary/structure advice]."' : '';
-    const prompt = `Question: "${question.text}"\nReference: "${question.correctAnswer||question.explanation}"\nStudent Answer: "${answer}"\nMode: ${question.mode}\nEvaluate using UK Y5/6 Science rubric (Emerging 3 to Exceeding 7). British English.${commInstr}\nReturn JSON.`;
-    return callGemini(prompt, {type:'OBJECT',properties:{isCorrect:{type:'BOOLEAN'},feedback:{type:'STRING'},grade:{type:'STRING'}}});
-  },
-  async teacherInsights(student) {
-    const prompt = `Analyse student performance for UK Y5/6 Science teacher.\nStudent: ${student.name}, Grade: ${student.currentGrade}, Mastery: ${JSON.stringify(student.mastery)}, Help used: ${student.helpUsageCount}.\nBritish English. Provide summary, 2 strengths, 2 weaknesses, 3 actionable steps each with resourceType (VIDEO/ARTICLE/WORKSHEET), resourceTitle, resourceSearchTerm.`;
-    const data = await callGemini(prompt, {type:'OBJECT',properties:{summary:{type:'STRING'},strengths:{type:'ARRAY',items:{type:'STRING'}},weaknesses:{type:'ARRAY',items:{type:'STRING'}},actionableSteps:{type:'ARRAY',items:{type:'OBJECT',properties:{step:{type:'STRING'},resourceType:{type:'STRING',enum:['VIDEO','ARTICLE','WORKSHEET']},resourceTitle:{type:'STRING'},resourceSearchTerm:{type:'STRING'}}}}}});
-    return data ? {studentId:student.email,...data} : null;
-  },
-  async challenges(student) {
-    const strong = Object.entries(student.mastery||{}).filter(([_,m])=>Object.values(m).some(s=>s>80)).map(([id])=>TOPICS.find(t=>t.id===id)?.name).filter(Boolean);
-    const prompt = `Student at NLCS Jeju is strong in: ${strong.join(', ')||'all topics'}.\nGenerate 3 suggestions: 1 project, 1 competition, 1 scholarship. For each: title, description, type (COMPETITION/PROJECT/SCHOLARSHIP), difficulty, reason, videoSearchTerm, articleSearchTerm, thoughtQuestions (2), researchQuestions (2). British English.`;
-    return callGemini(prompt, {type:'ARRAY',items:{type:'OBJECT',properties:{title:{type:'STRING'},description:{type:'STRING'},type:{type:'STRING',enum:['COMPETITION','PROJECT','SCHOLARSHIP']},difficulty:{type:'STRING'},reason:{type:'STRING'},videoSearchTerm:{type:'STRING'},articleSearchTerm:{type:'STRING'},thoughtQuestions:{type:'ARRAY',items:{type:'STRING'}},researchQuestions:{type:'ARRAY',items:{type:'STRING'}}}}}) || [];
-  },
-  async textbookChapter(topic) {
-    const prompt = `Write a Digital Textbook Chapter for UK National Curriculum Year ${topic.year} Science.\nTopic: ${topic.name}. Curriculum: ${topic.curriculumPoints.join(', ')}.\nTarget: Year ${topic.year} (9-11 yrs). Engaging, clear, British English.\nStructure: title, introduction, 3-4 sections (title+content ~200 words each), keyConcepts, summary.`;
-    return callGemini(prompt, {type:'OBJECT',properties:{title:{type:'STRING'},introduction:{type:'STRING'},sections:{type:'ARRAY',items:{type:'OBJECT',properties:{title:{type:'STRING'},content:{type:'STRING'}}}},keyConcepts:{type:'ARRAY',items:{type:'STRING'}},summary:{type:'STRING'}}});
-  },
-  async translate(text, lang) { return callGemini(`Translate this educational science text into ${lang} for a junior school student. Keep meaning precise but easy to understand.\n"${text}"`); },
-  async explain(concept)      { return callGemini(`Explain the science concept "${concept}" to a 10-year-old in 2 sentences. British English.`); },
-  async generateLiveQuestions(content) {
-    return callGemini(`Based on this lesson content, generate 3 Multiple Choice Questions to check student understanding.\nContent: "${content.substring(0,2000)}"\n4 options per question, one correct answer. British English.`,
-      {type:'ARRAY',items:{type:'OBJECT',properties:{id:{type:'STRING'},text:{type:'STRING'},options:{type:'ARRAY',items:{type:'STRING'}},correctAnswer:{type:'STRING'}}}}) || [];
-  },
-  async analyzeLiveResults(questions, results) {
-    return callGemini(`Analyze class quiz results.\nQuestions: ${JSON.stringify(questions)}\nPerformance: ${JSON.stringify(results)}\nDetermine: INDEPENDENT_STUDY / TEACHER_INTERVENTION / SPLIT_GROUP. Summary + 3 action items. British English.`,
-      {type:'OBJECT',properties:{summary:{type:'STRING'},recommendation:{type:'STRING',enum:['INDEPENDENT_STUDY','TEACHER_INTERVENTION','SPLIT_GROUP']},actionItems:{type:'ARRAY',items:{type:'STRING'}}}});
+function respond(data) {
+  return setCORSHeaders(
+    ContentService.createTextOutput(JSON.stringify(data))
+  );
+}
+
+// ── Router ───────────────────────────────────────────────────
+function doGet(e) {
+  const action = e.parameter.action;
+  try {
+    if (action === 'getStudent')       return respond(getStudent(e.parameter.email));
+    if (action === 'getAllStudents')    return respond(getAllStudents());
+    if (action === 'getActivityLog')   return respond(getActivityLog(e.parameter.email));
+    if (action === 'getLiveSession')   return respond(getLiveSession());
+    return respond({ error: 'Unknown action: ' + action });
+  } catch(err) {
+    return respond({ error: err.message });
   }
-};
-
-// ═══════════════════════════════════════════════════════════════
-// ── DEFAULT STUDENT BUILDER ────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-function buildNewStudent(googleUser) {
-  return {
-    email:           googleUser.email,
-    name:            googleUser.name,
-    picture:         googleUser.picture,
-    role:            TEACHER_EMAILS.includes(googleUser.email) ? 'TEACHER' : 'STUDENT',
-    xp:              0,
-    level:           1,
-    badges:          [],
-    mastery:         {},
-    avatarConfig:    null,
-    homeworkPending: 0,
-    helpUsageCount:  0,
-    currentGrade:    GradeBand.EXPECTED,
-    predictedGrade:  GradeBand.EXPECTED,
-    lastSeen:        new Date().toISOString(),
-  };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ── AVATAR RENDERER ────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-function AvatarSVG({ config, className = 'w-full h-full' }) {
-  if (!config) return <div className={`${className} flex items-center justify-center text-4xl`}>👩‍🔬</div>;
-  return (
-    <svg viewBox="0 0 200 200" className={className}>
-      <rect width="200" height="200" fill={config.backgroundColor||'#e0f2fe'}/>
-      <path d="M50 160 Q100 220 150 160 V200 H50 Z" fill={config.outfit==='lab-coat'?'#ffffff':'#002046'} stroke="#000" strokeWidth="2"/>
-      {config.outfit==='lab-coat' && <path d="M75 160 L75 200 M125 160 L125 200" stroke="#e2e8f0" strokeWidth="2"/>}
-      {config.outfit==='school-uniform' && <path d="M90 160 L110 160 L100 180 Z" fill="#C5A059"/>}
-      <rect x="85" y="140" width="30" height="20" fill={config.skinTone||'#f5d0b0'}/>
-      <ellipse cx="100" cy="100" rx="45" ry="55" fill={config.skinTone||'#f5d0b0'}/>
-      {config.hairStyle==='long' && <path d="M55 100 Q40 180 100 180 Q160 180 145 100" fill={config.hairColor||'#4a3828'}/>}
-      <circle cx="85" cy="95" r="5" fill="#333"/>
-      <circle cx="115" cy="95" r="5" fill="#333"/>
-      {config.accessory==='glasses' && <g stroke="#333" strokeWidth="2" fill="none"><circle cx="85" cy="95" r="12"/><line x1="97" y1="95" x2="103" y2="95"/><circle cx="115" cy="95" r="12"/></g>}
-      {config.accessory==='goggles' && <g><rect x="65" y="80" width="70" height="25" rx="5" fill="#4B9CD3" opacity="0.5" stroke="#333"/><line x1="65" y1="92" x2="55" y2="90" stroke="#333" strokeWidth="4"/><line x1="135" y1="92" x2="145" y2="90" stroke="#333" strokeWidth="4"/></g>}
-      {config.hairStyle==='short' && <path d="M60 70 Q100 40 140 70" fill={config.hairColor||'#4a3828'} stroke={config.hairColor||'#4a3828'} strokeWidth="10" strokeLinecap="round"/>}
-      {config.hairStyle==='long' && <path d="M60 70 Q100 50 140 70" fill="none" stroke={config.hairColor||'#4a3828'} strokeWidth="12" strokeLinecap="round"/>}
-      {config.hairStyle==='spiky' && <path d="M60 80 L70 50 L80 75 L90 40 L100 75 L110 45 L120 75 L130 50 L140 80" fill={config.hairColor||'#4a3828'}/>}
-      <path d="M85 130 Q100 140 115 130" stroke="#4a3828" strokeWidth="2" fill="none"/>
-    </svg>
-  );
+function doPost(e) {
+  const body   = JSON.parse(e.postData.contents);
+  const action = body.action;
+  try {
+    if (action === 'upsertStudent')    return respond(upsertStudent(body.data));
+    if (action === 'logActivity')      return respond(logActivity(body.data));
+    if (action === 'updateLiveSession')return respond(updateLiveSession(body.data));
+    return respond({ error: 'Unknown action: ' + action });
+  } catch(err) {
+    return respond({ error: err.message });
+  }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ── GOOGLE SIGN-IN SCREEN ──────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-function SignInScreen({ onSignIn }) {
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!CONFIG.GOOGLE_CLIENT_ID || CONFIG.GOOGLE_CLIENT_ID.startsWith('YOUR_')) return;
-    if (!window.google) { setTimeout(() => {}, 1000); return; }
-    window.google.accounts.id.initialize({
-      client_id: CONFIG.GOOGLE_CLIENT_ID,
-      callback: handleCredential,
-      hosted_domain: CONFIG.ALLOWED_DOMAIN,
-    });
-    window.google.accounts.id.renderButton(
-      document.getElementById('google-btn'),
-      { theme:'outline', size:'large', text:'signin_with', shape:'rectangular', width:280 }
-    );
-  }, []);
-
-  const handleCredential = async (response) => {
-    setLoading(true); setError('');
-    try {
-      // Decode JWT payload
-      const payload = JSON.parse(atob(response.credential.split('.')[1]));
-      if (CONFIG.ALLOWED_DOMAIN && payload.hd !== CONFIG.ALLOWED_DOMAIN) {
-        setError(`Please sign in with your ${CONFIG.ALLOWED_DOMAIN} school account.`);
-        setLoading(false); return;
-      }
-      const googleUser = { email:payload.email, name:payload.name, picture:payload.picture, token:response.credential };
-      onSignIn(googleUser);
-    } catch(e) { setError('Sign-in failed. Please try again.'); }
-    setLoading(false);
-  };
-
-  const isConfigured = CONFIG.GOOGLE_CLIENT_ID && !CONFIG.GOOGLE_CLIENT_ID.startsWith('YOUR_');
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#002046] via-[#002d5c] to-[#003a73] p-4">
-      <div className="max-w-md w-full">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <svg className="h-24 w-auto mx-auto mb-4" viewBox="0 0 100 100" fill="none">
-            <ellipse cx="50" cy="55" rx="42" ry="12" stroke="#C5A059" strokeWidth="3" transform="rotate(-30 50 55)" strokeOpacity="0.7"/>
-            <circle cx="18" cy="40" r="3" fill="#C5A059"/>
-            <path d="M45,80 Q50,95 55,80" fill="#ef4444"/>
-            <path d="M48,80 Q50,90 52,80" fill="#fbbf24"/>
-            <path d="M50,15 Q70,50 65,80 L35,80 Q30,50 50,15 Z" fill="white" opacity="0.9"/>
-            <path d="M35,75 L20,90 L38,82 Z" fill="white" opacity="0.9"/>
-            <path d="M65,75 L80,90 L62,82 Z" fill="white" opacity="0.9"/>
-            <circle cx="50" cy="45" r="10" fill="#4B9CD3" stroke="#fff" strokeWidth="2"/>
-            <circle cx="53" cy="42" r="3" fill="white" opacity="0.7"/>
-          </svg>
-          <p className="text-[#C5A059] text-xs font-bold uppercase tracking-widest mb-1">North London Collegiate School Jeju</p>
-          <h1 className="text-3xl font-bold text-white font-serif">Curiosity Drive</h1>
-          <p className="text-blue-300 text-sm mt-2">Junior School Science Platform</p>
-        </div>
-
-        <div className="bg-white rounded-3xl shadow-2xl p-8 text-center">
-          {isConfigured ? (
-            <>
-              <h2 className="text-xl font-bold text-[#002046] mb-2 font-serif">Welcome back, Scientist!</h2>
-              <p className="text-slate-500 text-sm mb-6">Sign in with your <strong>NLCS Jeju</strong> school account to continue your learning journey.</p>
-              {loading ? (
-                <div className="flex items-center justify-center py-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-t-4 border-b-4 border-[#002046]"></div>
-                  <span className="ml-3 text-slate-500">Signing in...</span>
-                </div>
-              ) : (
-                <div id="google-btn" className="flex justify-center"></div>
-              )}
-              {error && <p className="text-red-500 text-sm mt-4 bg-red-50 p-3 rounded-xl">{error}</p>}
-              <p className="text-xs text-slate-400 mt-4">Only @{CONFIG.ALLOWED_DOMAIN} accounts can sign in.</p>
-            </>
-          ) : (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-left">
-              <h3 className="font-bold text-amber-900 mb-3">⚙️ Setup Required</h3>
-              <p className="text-amber-800 text-sm mb-3">Open this file and fill in the <code className="bg-amber-100 px-1 rounded">CONFIG</code> section at the top:</p>
-              <ul className="text-xs text-amber-700 space-y-2">
-                <li><strong>GOOGLE_CLIENT_ID</strong> — from Google Cloud Console</li>
-                <li><strong>ALLOWED_DOMAIN</strong> — your school's Google domain</li>
-                <li><strong>APPS_SCRIPT_URL</strong> — your deployed Apps Script URL</li>
-                <li><strong>GEMINI_API_KEY</strong> — from Google AI Studio</li>
-              </ul>
-              <p className="text-xs text-amber-600 mt-3">See the setup guide for step-by-step instructions.</p>
-            </div>
-          )}
-        </div>
-
-        <p className="text-center text-blue-400 text-xs mt-6">© NLCS Jeju Junior School · Curiosity Drive · UK National Curriculum</p>
-      </div>
-    </div>
-  );
+// ── Sheet helpers ─────────────────────────────────────────────
+function getOrCreateSheet(name, headers) {
+  const ss    = SpreadsheetApp.getActiveSpreadsheet();
+  let   sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length)
+         .setFontWeight('bold')
+         .setBackground('#002046')
+         .setFontColor('#C5A059');
+  }
+  return sheet;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ── AVATAR CREATOR ─────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-function AvatarCreator({ initialConfig, onSave, onCancel }) {
-  const [cfg, setCfg] = useState(initialConfig || {skinTone:'#f5d0b0',hairStyle:'short',hairColor:'#4a3828',accessory:'none',outfit:'school-uniform',backgroundColor:'#e0f2fe'});
-  const skins = ['#f5d0b0','#eeb082','#d99164','#bb6d4a','#8d5524','#59381e'];
-  const hairs = ['#eecf6a','#b55816','#8d5524','#4a3828','#2a2a2a','#e6e6e6'];
-  const bgs   = ['#e0f2fe','#dcfce7','#fef9c3','#fae8ff','#f3f4f6'];
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col md:flex-row max-h-[90vh]">
-        <div className="w-full md:w-2/5 bg-slate-50 p-8 flex flex-col items-center justify-center">
-          <h2 className="text-xl font-bold text-[#002046] mb-4 font-serif">Your Scientist</h2>
-          <div className="w-44 h-44 rounded-full overflow-hidden border-4 border-[#C5A059] shadow-xl"><AvatarSVG config={cfg}/></div>
-          <p className="text-xs text-slate-400 italic mt-4 text-center">"Curiosity is the engine of achievement."</p>
-        </div>
-        <div className="w-full md:w-3/5 p-8 overflow-y-auto">
-          <h3 className="text-lg font-bold text-[#002046] mb-5">Customise Appearance</h3>
-          <div className="mb-5">
-            <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Skin Tone</label>
-            <div className="flex gap-2 flex-wrap">{skins.map(c=><button key={c} onClick={()=>setCfg({...cfg,skinTone:c})} className={`w-9 h-9 rounded-full border-2 transition-transform hover:scale-110 ${cfg.skinTone===c?'border-indigo-600 scale-110':'border-slate-200'}`} style={{backgroundColor:c}}/>)}</div>
-          </div>
-          <div className="mb-5 grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Hair Style</label>
-              <div className="flex gap-1">{['short','long','spiky'].map(s=><button key={s} onClick={()=>setCfg({...cfg,hairStyle:s})} className={`px-3 py-1.5 rounded-lg border text-xs capitalize ${cfg.hairStyle===s?'bg-[#002046] text-white':'bg-white text-slate-600 border-slate-300'}`}>{s}</button>)}</div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Hair Colour</label>
-              <div className="flex gap-2 flex-wrap">{hairs.map(c=><button key={c} onClick={()=>setCfg({...cfg,hairColor:c})} className={`w-7 h-7 rounded-full border-2 ${cfg.hairColor===c?'border-indigo-600':'border-slate-200'}`} style={{backgroundColor:c}}/>)}</div>
-            </div>
-          </div>
-          <div className="mb-5 grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Outfit</label>
-              <div className="flex gap-1">
-                <button onClick={()=>setCfg({...cfg,outfit:'school-uniform'})} className={`flex-1 py-2 rounded-lg border text-xs font-bold ${cfg.outfit==='school-uniform'?'bg-[#002046] text-[#C5A059]':'bg-white text-slate-600'}`}>Uniform</button>
-                <button onClick={()=>setCfg({...cfg,outfit:'lab-coat'})} className={`flex-1 py-2 rounded-lg border text-xs font-bold ${cfg.outfit==='lab-coat'?'bg-[#002046] text-white':'bg-white text-slate-600'}`}>Lab Coat</button>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Eyewear</label>
-              <div className="flex gap-1">{['none','glasses','goggles'].map(a=><button key={a} onClick={()=>setCfg({...cfg,accessory:a})} className={`flex-1 py-2 rounded-lg border text-xs capitalize ${cfg.accessory===a?'bg-slate-200 font-bold':'bg-white'}`}>{a}</button>)}</div>
-            </div>
-          </div>
-          <div className="mb-5">
-            <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Background</label>
-            <div className="flex gap-2">{bgs.map(c=><button key={c} onClick={()=>setCfg({...cfg,backgroundColor:c})} className={`w-9 h-9 rounded-lg border-2 ${cfg.backgroundColor===c?'border-indigo-600':'border-slate-200'}`} style={{backgroundColor:c}}/>)}</div>
-          </div>
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-            <button onClick={onCancel} className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-600 font-bold hover:bg-slate-50">Cancel</button>
-            <button onClick={()=>onSave(cfg)} className="px-7 py-2.5 rounded-xl bg-[#002046] text-[#C5A059] font-bold shadow hover:shadow-lg">Save Avatar</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+function sheetToObjects(sheet) {
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  const headers = data[0];
+  return data.slice(1).map(row => {
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = row[i]);
+    return obj;
+  });
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ── QUIZ MODULE ────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-function QuizModule({ student, topic, mode, onExit, onComplete }) {
-  const [question, setQuestion]   = useState(null);
-  const [loading, setLoading]     = useState(true);
-  const [selected, setSelected]   = useState('');
-  const [textAns, setTextAns]     = useState('');
-  const [result, setResult]       = useState(null);
-  const [hintShown, setHintShown] = useState(false);
-  const [hintUsed, setHintUsed]   = useState(false);
-  const [qCount, setQCount]       = useState(0);
-  const [correct, setCorrect]     = useState(0);
-  const [diff, setDiff]           = useState('medium');
-  const [error, setError]         = useState('');
+// ── Students ──────────────────────────────────────────────────
+const STUDENT_HEADERS = [
+  'email','name','picture','role',
+  'xp','level','badges',
+  'mastery','avatarConfig',
+  'homeworkPending','helpUsageCount',
+  'currentGrade','predictedGrade',
+  'lastSeen','createdAt'
+];
 
-  useEffect(() => { loadQ(); }, []);
+function getStudent(email) {
+  if (!email) return { error: 'No email provided' };
+  const sheet = getOrCreateSheet(SHEET_NAME_STUDENTS, STUDENT_HEADERS);
+  const rows  = sheetToObjects(sheet);
+  const found = rows.find(r => r.email === email);
+  if (!found) return { student: null };
+  // Parse JSON fields
+  found.mastery      = safeJSON(found.mastery, {});
+  found.avatarConfig = safeJSON(found.avatarConfig, null);
+  found.badges       = safeJSON(found.badges, []);
+  return { student: found };
+}
 
-  const fallbackQ = () => ({type:'MULTIPLE_CHOICE',text:`Which of these is linked to ${topic.name}?`,options:[topic.vocabulary[0]?.term||'A','B','C','D'],correctAnswer:topic.vocabulary[0]?.term||'A',explanation:topic.vocabulary[0]?.definition||'See your textbook.',hint:'Think about the key vocabulary.',difficulty:'easy',videoSearchTerm:topic.videoSearchTerm});
+function getAllStudents() {
+  const sheet   = getOrCreateSheet(SHEET_NAME_STUDENTS, STUDENT_HEADERS);
+  const rows    = sheetToObjects(sheet);
+  const students = rows.map(s => ({
+    ...s,
+    mastery:      safeJSON(s.mastery, {}),
+    avatarConfig: safeJSON(s.avatarConfig, null),
+    badges:       safeJSON(s.badges, [])
+  }));
+  return { students };
+}
 
-  const loadQ = async () => {
-    setLoading(true); setResult(null); setSelected(''); setTextAns(''); setHintShown(false); setHintUsed(false); setError('');
-    try {
-      const q = await AI.generateQuestion(topic, mode, diff);
-      setQuestion(q || fallbackQ());
-    } catch(e) { setError('AI unavailable — using fallback question.'); setQuestion(fallbackQ()); }
-    setLoading(false);
-  };
+function upsertStudent(data) {
+  const sheet = getOrCreateSheet(SHEET_NAME_STUDENTS, STUDENT_HEADERS);
+  const rows  = sheet.getDataRange().getValues();
+  const headers = rows[0];
+  const emailCol = headers.indexOf('email');
 
-  const submit = async () => {
-    if (!question) return;
-    setLoading(true);
-    let isCorrect = false, feedback = '', grade = '';
-    if (question.type === 'MULTIPLE_CHOICE') {
-      isCorrect = selected === question.correctAnswer;
-      feedback  = isCorrect ? '✅ Excellent! That is correct.' : `❌ Not quite. ${question.explanation}`;
-      grade     = isCorrect ? GradeBand.EXPECTED_PLUS : GradeBand.EXPECTED_MINUS;
-    } else {
-      try {
-        const ev = await AI.evaluateAnswer({...question, mode}, textAns);
-        if (ev) { isCorrect=ev.isCorrect; feedback=ev.feedback; grade=ev.grade; }
-        else    { isCorrect=true; feedback='Good effort! Keep practising.'; grade=GradeBand.EXPECTED; }
-      } catch { isCorrect=true; feedback='Could not evaluate — marked as attempted.'; grade=GradeBand.EXPECTED; }
+  // Serialise JSON fields
+  const row = STUDENT_HEADERS.map(h => {
+    const val = data[h];
+    if (val === undefined || val === null) return '';
+    if (typeof val === 'object') return JSON.stringify(val);
+    return val;
+  });
+
+  // Find existing row
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][emailCol] === data.email) {
+      sheet.getRange(i + 1, 1, 1, row.length).setValues([row]);
+      return { success: true, action: 'updated' };
     }
-    const newCorrect = correct + (isCorrect?1:0);
-    const newQCount  = qCount + 1;
-    setCorrect(newCorrect); setQCount(newQCount); setResult({isCorrect,feedback,grade}); setLoading(false);
-    // Adaptive difficulty
-    if (isCorrect && diff==='easy')   setDiff('medium');
-    if (isCorrect && diff==='medium') setDiff('hard');
-    if (!isCorrect && diff==='hard')  setDiff('medium');
-    if (!isCorrect && diff==='medium')setDiff('easy');
-    // Log activity
-    api.logActivity({ email:student.email, studentName:student.name, topicId:topic.id, topicName:topic.name, mode, score:isCorrect?100:0, usedHelp:hintUsed, grade });
-  };
+  }
 
-  const finish = () => onComplete(Math.round((correct/Math.max(qCount,1))*100), qCount, correct);
-
-  if (loading && !result) return (
-    <div className="flex flex-col items-center justify-center h-96">
-      <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-600 mb-4"></div>
-      <p className="text-slate-500">Generating question ({diff})...</p>
-    </div>
-  );
-
-  const mc = {CONTENT:'indigo',COMMUNICATION:'purple',SCIENTIFIC:'green',DATA_ANALYSIS:'amber'}[mode]||'indigo';
-
-  return (
-    <div className="max-w-3xl mx-auto p-4">
-      <div className="flex items-center justify-between mb-6">
-        <button onClick={onExit} className="text-slate-500 hover:text-slate-800 font-semibold flex items-center text-sm">
-          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>Abort Mission
-        </button>
-        <div className="flex gap-2">
-          <span className="bg-slate-100 text-slate-700 text-xs font-bold px-3 py-1 rounded-full">Q{qCount+1} · {correct}/{qCount} ✓</span>
-          <span className={`text-xs font-bold px-3 py-1 rounded-full ${diff==='easy'?'bg-green-100 text-green-800':diff==='medium'?'bg-yellow-100 text-yellow-800':'bg-red-100 text-red-800'}`}>{diff}</span>
-        </div>
-      </div>
-      {error && <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-xs text-yellow-800">⚠️ {error}</div>}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 mb-5">
-        <div className="inline-block text-xs font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-700 mb-4">{topic.icon} {topic.name} · {mode.replace('_',' ')}</div>
-        <h2 className="text-xl font-bold text-slate-800 mb-6 leading-relaxed">{question?.text}</h2>
-        {question?.tableData && (
-          <div className="mb-5 overflow-x-auto">
-            <table className="w-full text-sm border border-slate-200 rounded-xl overflow-hidden">
-              <thead className="bg-slate-100"><tr>{question.tableData.headers?.map((h,i)=><th key={i} className="px-4 py-2 font-bold text-slate-700 text-left">{h}</th>)}</tr></thead>
-              <tbody>{question.tableData.rows?.map((row,ri)=><tr key={ri} className={ri%2===0?'bg-white':'bg-slate-50'}>{row.map((c,ci)=><td key={ci} className="px-4 py-2 text-slate-600">{c}</td>)}</tr>)}</tbody>
-            </table>
-          </div>
-        )}
-        {!result && (question?.type==='MULTIPLE_CHOICE' ? (
-          <div className="space-y-3">{question.options?.map((opt,i)=>(
-            <button key={i} onClick={()=>setSelected(opt)} className={`w-full text-left p-4 rounded-xl border-2 font-medium transition-all ${selected===opt?'bg-indigo-50 border-indigo-400 text-indigo-800':'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
-              <span className="font-bold mr-2">{String.fromCharCode(65+i)}.</span>{opt}
-            </button>
-          ))}</div>
-        ) : (
-          <textarea value={textAns} onChange={e=>setTextAns(e.target.value)} className="w-full p-4 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-indigo-400 min-h-32 resize-none text-sm" placeholder="Write your scientific explanation here..."/>
-        ))}
-        {hintShown && !result && <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800 flex items-start"><span className="mr-2">💡</span><div><strong>Hint:</strong> {question?.hint}</div></div>}
-      </div>
-
-      {!result ? (
-        <div className="flex items-center justify-between">
-          <button onClick={()=>{setHintUsed(true);setHintShown(true);}} disabled={hintShown} className={`text-sm font-bold px-4 py-2 rounded-xl transition-colors ${hintShown?'text-slate-300':'text-amber-600 hover:bg-amber-50 border border-amber-200'}`}>💡 Hint{hintUsed?' (used)':''}</button>
-          <button onClick={submit} disabled={!selected && !textAns.trim()} className="bg-[#002046] text-white font-bold px-8 py-3 rounded-xl hover:bg-[#002d5c] disabled:opacity-40 transition-colors shadow-sm">Submit Answer →</button>
-        </div>
-      ) : (
-        <div className={`rounded-2xl p-6 mb-4 ${result.isCorrect?'bg-green-50 border border-green-200':'bg-red-50 border border-red-200'}`}>
-          <p className="font-bold text-lg mb-2">{result.isCorrect?'🎉 Well done!':'🔄 Keep going!'}</p>
-          <p className="text-slate-700 whitespace-pre-line text-sm leading-relaxed">{result.feedback}</p>
-          {result.grade && <p className="mt-3 text-xs font-bold text-slate-500">Grade: <span className={`px-2 py-0.5 rounded ${GRADE_COLOR[result.grade]||'bg-slate-100'}`}>{result.grade}</span></p>}
-          {!result.isCorrect && question?.videoSearchTerm && (
-            <div className="mt-4 p-3 bg-blue-50 rounded-xl border border-blue-200">
-              <p className="text-xs font-bold text-blue-800 mb-1">📺 Watch a video to help:</p>
-              <a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(question.videoSearchTerm)}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">{question.videoSearchTerm}</a>
-            </div>
-          )}
-          <div className="flex gap-3 mt-5">
-            <button onClick={loadQ} className="flex-1 bg-[#002046] text-white font-bold py-3 rounded-xl hover:bg-[#002d5c]">Next Question →</button>
-            <button onClick={finish} className="px-6 py-3 rounded-xl border-2 border-slate-300 text-slate-600 font-bold hover:bg-slate-50">Finish</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  // New student
+  row[STUDENT_HEADERS.indexOf('createdAt')] = new Date().toISOString();
+  sheet.appendRow(row);
+  return { success: true, action: 'created' };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ── TOPIC SELECTOR ─────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-function TopicSelector({ student, onSelect }) {
-  const [picked, setPicked] = useState(null);
-  const y5 = TOPICS.filter(t=>t.year===5), y6 = TOPICS.filter(t=>t.year===6);
-  const getMastery = (topicId) => {
-    const m = student.mastery?.[topicId];
-    if (!m) return 0;
-    const vals = Object.values(m);
-    return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
-  };
+// ── Activity Log ──────────────────────────────────────────────
+const ACTIVITY_HEADERS = [
+  'id','email','studentName','topicId','topicName',
+  'mode','score','usedHelp','grade','timestamp'
+];
 
-  if (picked) return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <button onClick={()=>setPicked(null)} className="text-slate-500 hover:text-indigo-600 mb-6 flex items-center text-sm font-semibold">
-        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg>Back to Topics
-      </button>
-      <div className="text-center mb-8"><span className="text-6xl block mb-3">{picked.icon}</span><h2 className="text-3xl font-bold text-slate-800 font-serif">{picked.name}</h2><p className="text-slate-500 mt-2 max-w-xl mx-auto">{picked.description}</p></div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        {[{m:QuizMode.CONTENT,icon:'📚',label:'Content Practice',color:'blue'},{m:QuizMode.COMMUNICATION,icon:'🗣️',label:'Communication',color:'purple'},{m:QuizMode.SCIENTIFIC,icon:'🔬',label:'Working Scientifically',color:'green'},{m:QuizMode.DATA_ANALYSIS,icon:'📊',label:'Data Interpretation',color:'amber'}].map(({m,icon,label,color})=>{
-          const score = student.mastery?.[picked.id]?.[m] || 0;
-          return (
-            <button key={m} onClick={()=>onSelect(picked,m)} className={`p-6 bg-white border-2 border-slate-100 rounded-2xl hover:border-${color}-400 hover:shadow-lg transition-all text-left group`}>
-              <div className={`w-12 h-12 bg-${color}-100 text-${color}-600 rounded-full flex items-center justify-center mb-3 text-2xl group-hover:scale-110 transition-transform`}>{icon}</div>
-              <h4 className="text-sm font-bold text-slate-800 mb-1">{label}</h4>
-              {score > 0 && <div className="mt-2"><div className="w-full bg-slate-100 rounded-full h-1.5"><div className={`bg-${color}-500 h-1.5 rounded-full`} style={{width:`${score}%`}}></div></div><p className="text-xs text-slate-400 mt-1">Best: {score}%</p></div>}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-
-  const TopicGrid = ({topics, title}) => (
-    <div className="mb-8">
-      <h3 className="text-xl font-bold text-slate-700 mb-4 pl-3 border-l-4 border-indigo-500">{title}</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {topics.map(t => {
-          const avg = getMastery(t.id);
-          return (
-            <button key={t.id} onClick={()=>setPicked(t)} className="group relative bg-white rounded-xl shadow-sm hover:shadow-xl transition-all duration-300 p-5 text-left border border-slate-100 hover:border-indigo-300 overflow-hidden">
-              <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 text-5xl">{t.icon}</div>
-              <div className="relative z-10">
-                <span className="text-3xl mb-2 block">{t.icon}</span>
-                <h4 className="font-bold text-slate-800 text-sm mb-1">{t.name}</h4>
-                <p className="text-xs text-slate-400 line-clamp-2 mb-2">{t.description}</p>
-                {avg > 0 && <div className="w-full bg-slate-100 rounded-full h-1.5"><div className="bg-indigo-500 h-1.5 rounded-full" style={{width:`${avg}%`}}></div></div>}
-                {avg === 0 && <span className="text-xs text-slate-400">Not started</span>}
-                {avg > 0 && <span className="text-xs text-indigo-600 font-bold">{avg}% mastery</span>}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <h2 className="text-2xl font-bold text-slate-800 mb-6 font-serif">Choose Your Topic</h2>
-      <TopicGrid topics={y5} title="Year 5 Topics"/>
-      <TopicGrid topics={y6} title="Year 6 Topics"/>
-    </div>
-  );
+function logActivity(data) {
+  const sheet = getOrCreateSheet(SHEET_NAME_ACTIVITY, ACTIVITY_HEADERS);
+  const row = ACTIVITY_HEADERS.map(h => {
+    if (h === 'timestamp') return new Date().toISOString();
+    if (h === 'id') return Utilities.getUuid();
+    return data[h] !== undefined ? data[h] : '';
+  });
+  sheet.appendRow(row);
+  return { success: true };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ── STUDENT DASHBOARD ──────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-function StudentDashboard({ student, onStartQuiz, onOpenTextbook, onJoinLive, onEditAvatar, activityLog }) {
-  const [challenges, setChallenges]       = useState([]);
-  const [loadingChallenges, setLC]        = useState(false);
-  const [flashcardTopic, setFCTopic]      = useState(null);
-  const [fcIdx, setFCIdx]                 = useState(0);
-  const [flipped, setFlipped]             = useState(false);
-
-  useEffect(()=>{
-    const fetch = async () => { setLC(true); try { const c = await AI.challenges(student); setChallenges(c); } catch {} setLC(false); };
-    fetch();
-  }, [student.email]);
-
-  const recommendations = useMemo(() => {
-    const all = [];
-    Object.entries(student.mastery||{}).forEach(([tId,modes])=>{ const t=TOPICS.find(x=>x.id===tId); if(t) Object.entries(modes).forEach(([m,s])=>all.push({topic:t,mode:m,score:s})); });
-    return all.sort((a,b)=>a.score-b.score).slice(0,3);
-  }, [student]);
-
-  const recentActivity = useMemo(() => activityLog.slice(-5).reverse(), [activityLog]);
-
-  const totalTopics = TOPICS.length;
-  const startedTopics = Object.keys(student.mastery||{}).length;
-
-  return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto">
-      {/* Profile banner */}
-      <div className="bg-[#002046] rounded-3xl p-6 md:p-8 text-white relative overflow-hidden shadow-xl mb-6">
-        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-          <div className="flex items-center gap-5">
-            <div className="w-20 h-20 rounded-full border-4 border-[#C5A059] overflow-hidden cursor-pointer flex-shrink-0 bg-white/20" onClick={onEditAvatar}>
-              {student.avatarConfig ? <AvatarSVG config={student.avatarConfig}/> : (student.picture ? <img src={student.picture} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center text-4xl">👩‍🔬</div>)}
-            </div>
-            <div>
-              <p className="text-[#C5A059] text-xs font-bold uppercase tracking-widest">NLCS Jeju · Junior School</p>
-              <h1 className="text-2xl md:text-3xl font-bold font-serif">Hello, {student.name.split(' ')[0]}! 👋</h1>
-              <p className="text-blue-200 text-sm mt-1">{student.currentGrade} · Level {student.level}</p>
-            </div>
-          </div>
-          <div className="flex gap-4 flex-wrap">
-            {[{label:'XP',value:student.xp,icon:'🧪'},{label:'Badges',value:(student.badges||[]).length,icon:'🎖️'},{label:'Topics Started',value:`${startedTopics}/${totalTopics}`,icon:'📚'}].map(({label,value,icon})=>(
-              <div key={label} className="bg-white/10 backdrop-blur rounded-xl p-3 border border-white/20 min-w-[80px] text-center">
-                <span className="text-xl block">{icon}</span>
-                <p className="text-xs text-[#C5A059] font-bold uppercase tracking-wider">{label}</p>
-                <p className="text-lg font-bold">{value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-        <button onClick={onJoinLive} className="mt-6 relative z-10 bg-[#C5A059] text-[#002046] px-6 py-2.5 rounded-xl font-bold hover:bg-[#b08d4b] transition-colors shadow-lg flex items-center w-fit animate-pulse">
-          <span className="mr-2">📡</span>Join Live Class
-        </button>
-        <div className="absolute top-0 right-0 -mt-10 -mr-10 w-64 h-64 bg-[#C5A059] opacity-5 rounded-full blur-3xl"></div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        {/* Quick Actions */}
-        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[
-            {icon:'🚀',label:'Curiosity Mission',sub:'Adaptive AI-powered practice',color:'blue',action:onStartQuiz},
-            {icon:'📖',label:'Digital Textbook',sub:'AI chapters with translation',color:'indigo',action:onOpenTextbook},
-            {icon:'⚡',label:'Vocab Flashcards',sub:'Quick vocabulary revision',color:'amber',action:()=>setFCTopic(TOPICS[0])},
-          ].map(({icon,label,sub,color,action})=>(
-            <button key={label} onClick={action} className={`bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:border-${color}-300 hover:shadow-md transition-all text-left group`}>
-              <span className="text-3xl block mb-3">{icon}</span>
-              <h3 className={`font-bold text-slate-800 text-sm group-hover:text-${color}-600 transition-colors`}>{label}</h3>
-              <p className="text-xs text-slate-500 mt-1">{sub}</p>
-            </button>
-          ))}
-        </div>
-
-        {/* Recent Activity */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-          <h3 className="font-bold text-[#002046] mb-3 font-serif flex items-center">📋 Recent Activity</h3>
-          {recentActivity.length === 0 ? (
-            <p className="text-xs text-slate-400 text-center py-6">No activity yet — start a mission!</p>
-          ) : (
-            <div className="space-y-2">{recentActivity.map((a,i)=>(
-              <div key={i} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
-                <div><p className="text-xs font-bold text-slate-700 truncate max-w-[140px]">{a.topicName}</p><p className="text-[10px] text-slate-400">{a.mode?.replace('_',' ')}</p></div>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded ${a.score>=80?'bg-green-100 text-green-700':a.score>=50?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}`}>{a.score}%</span>
-              </div>
-            ))}</div>
-          )}
-        </div>
-      </div>
-
-      {/* Recommended Focus Areas */}
-      {recommendations.length > 0 && (
-        <div className="mb-6">
-          <h2 className="text-lg font-bold text-slate-800 mb-3 font-serif">🎯 Focus Areas</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {recommendations.map((rec,i)=>(
-              <div key={i} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start mb-3">
-                  <div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">{rec.mode.replace('_',' ')}</p><h4 className="font-bold text-slate-800 text-sm">{rec.topic.name}</h4></div>
-                  <div className="relative w-10 h-10 flex items-center justify-center flex-shrink-0">
-                    <svg className="absolute w-full h-full -rotate-90"><circle cx="20" cy="20" r="16" stroke="#f1f5f9" strokeWidth="3" fill="none"/><circle cx="20" cy="20" r="16" stroke="#ef4444" strokeWidth="3" fill="none" strokeDasharray="100" strokeDashoffset={100-rec.score}/></svg>
-                    <span className="text-[10px] font-bold text-red-600">{rec.score}%</span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-1">
-                  {rec.topic.videoSearchTerm&&<a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(rec.topic.videoSearchTerm)}`} target="_blank" rel="noopener noreferrer" className="bg-red-50 hover:bg-red-100 text-red-700 py-2 rounded-lg text-center flex flex-col items-center"><span className="text-sm">📺</span><span className="text-[10px] font-bold mt-0.5">Watch</span></a>}
-                  {rec.topic.studyUrl&&<a href={rec.topic.studyUrl} target="_blank" rel="noopener noreferrer" className="bg-blue-50 hover:bg-blue-100 text-blue-700 py-2 rounded-lg text-center flex flex-col items-center"><span className="text-sm">📚</span><span className="text-[10px] font-bold mt-0.5">Read</span></a>}
-                  <button onClick={()=>{setFCTopic(rec.topic);setFCIdx(0);setFlipped(false);}} className="bg-amber-50 hover:bg-amber-100 text-amber-700 py-2 rounded-lg text-center flex flex-col items-center"><span className="text-sm">⚡</span><span className="text-[10px] font-bold mt-0.5">Vocab</span></button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Challenges */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-        <h3 className="font-bold text-[#002046] mb-4 font-serif">🏆 Curiosity Opportunities</h3>
-        {loadingChallenges ? <p className="text-sm text-slate-400 animate-pulse">Scanning for opportunities...</p> : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {challenges.map((c,i)=>(
-              <div key={i} className="p-4 bg-slate-50 rounded-xl border border-slate-200 hover:border-[#C5A059] transition-colors">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded text-white ${c.type==='COMPETITION'?'bg-red-500':c.type==='SCHOLARSHIP'?'bg-[#C5A059]':'bg-blue-500'}`}>{c.type}</span>
-                <h4 className="font-bold text-slate-800 text-sm mt-2 mb-1">{c.title}</h4>
-                <p className="text-xs text-slate-500 italic mb-2 line-clamp-2">"{c.reason}"</p>
-                <div className="flex gap-2 mt-2">
-                  {c.videoSearchTerm&&<a href={`https://www.youtube.com/results?search_query=${encodeURIComponent(c.videoSearchTerm)}`} target="_blank" rel="noopener noreferrer" className="flex-1 bg-red-50 text-red-600 text-[10px] font-bold py-1.5 rounded text-center hover:bg-red-100">▶ Watch</a>}
-                  {c.articleSearchTerm&&<a href={`https://www.google.com/search?q=${encodeURIComponent(c.articleSearchTerm)}`} target="_blank" rel="noopener noreferrer" className="flex-1 bg-blue-50 text-blue-600 text-[10px] font-bold py-1.5 rounded text-center hover:bg-blue-100">📖 Read</a>}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Flashcard Modal */}
-      {flashcardTopic && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg p-8 relative shadow-2xl">
-            <button onClick={()=>setFCTopic(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-            <div className="flex gap-2 mb-4 flex-wrap">{TOPICS.map(t=><button key={t.id} onClick={()=>{setFCTopic(t);setFCIdx(0);setFlipped(false);}} className={`px-2 py-1 rounded-lg text-xs font-bold border ${flashcardTopic.id===t.id?'bg-[#002046] text-white':'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>{t.icon}</button>)}</div>
-            <h3 className="text-center text-[#002046] font-bold text-lg mb-1 font-serif">{flashcardTopic.name}</h3>
-            <p className="text-center text-slate-400 text-xs mb-5">Card {fcIdx+1} of {flashcardTopic.vocabulary.length}</p>
-            <div className="perspective-1000 h-48 mb-5 cursor-pointer" onClick={()=>setFlipped(!flipped)}>
-              <div className={`relative w-full h-full transition-transform duration-500 transform-style-3d ${flipped?'rotate-y-180':''}`}>
-                <div className="absolute inset-0 backface-hidden bg-slate-50 rounded-2xl border-2 border-[#002046] flex flex-col items-center justify-center p-6">
-                  <span className="text-3xl mb-2">🤔</span>
-                  <h2 className="text-xl font-bold text-[#002046] text-center">{flashcardTopic.vocabulary[fcIdx].term}</h2>
-                  <p className="text-slate-400 text-xs mt-2 uppercase font-bold tracking-widest">Tap to Flip</p>
-                </div>
-                <div className="absolute inset-0 backface-hidden bg-[#002046] rounded-2xl border-2 border-[#C5A059] flex flex-col items-center justify-center p-6 rotate-y-180">
-                  <span className="text-3xl mb-2">💡</span>
-                  <p className="text-white text-sm text-center font-medium leading-relaxed">{flashcardTopic.vocabulary[fcIdx].definition}</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-between items-center">
-              <button onClick={()=>{setFCIdx((fcIdx-1+flashcardTopic.vocabulary.length)%flashcardTopic.vocabulary.length);setFlipped(false);}} className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-[#002046]"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg></button>
-              <div className="flex gap-1">{flashcardTopic.vocabulary.map((_,idx)=><div key={idx} className={`w-2 h-2 rounded-full ${idx===fcIdx?'bg-[#C5A059]':'bg-slate-200'}`}></div>)}</div>
-              <button onClick={()=>{setFCIdx((fcIdx+1)%flashcardTopic.vocabulary.length);setFlipped(false);}} className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-[#002046]"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/></svg></button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+function getActivityLog(email) {
+  const sheet = getOrCreateSheet(SHEET_NAME_ACTIVITY, ACTIVITY_HEADERS);
+  const rows  = sheetToObjects(sheet);
+  const log   = email ? rows.filter(r => r.email === email) : rows;
+  return { log: log.slice(-200) }; // last 200 entries
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ── TEXTBOOK ───────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-function TextbookReader({ student, onExit }) {
-  const [picked, setPicked]     = useState(null);
-  const [chapter, setChapter]   = useState(null);
-  const [loading, setLoading]   = useState(false);
-  const [lang, setLang]         = useState('English');
-  const [translated, setTrans]  = useState({});
-  const [explainData, setExpln] = useState({});
+// ── Live Session ──────────────────────────────────────────────
+const SESSION_HEADERS = [
+  'id','isActive','content','questions',
+  'currentStage','studentResponses','updatedAt'
+];
 
-  const loadChapter = async (t) => { setPicked(t); setLoading(true); setChapter(null); setTrans({}); try { setChapter(await AI.textbookChapter(t)); } catch {} setLoading(false); };
-  const doTranslate = async (l) => { setLang(l); if (!chapter || l==='English') return; const intro = await AI.translate(chapter.introduction,l); setTrans({intro}); for(let i=0;i<chapter.sections.length;i++){const s=await AI.translate(chapter.sections[i].content,l);setTrans(p=>({...p,[i]:s}));} };
-  const doExplain   = async (term) => { const e = await AI.explain(term); setExpln(p=>({...p,[term]:e})); };
-  const get = (key, orig) => lang==='English' ? orig : (translated[key] || orig);
-
-  if (!picked) return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <button onClick={onExit} className="text-slate-500 hover:text-slate-800 flex items-center font-semibold text-sm"><svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg>Back</button>
-        <h2 className="text-2xl font-bold text-[#002046] font-serif">📖 Digital Textbook</h2><div/>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {TOPICS.map(t=>{
-          const avg = (() => { const m=student.mastery?.[t.id]; if(!m) return 0; const v=Object.values(m); return Math.round(v.reduce((a,b)=>a+b,0)/v.length); })();
-          return (
-            <button key={t.id} onClick={()=>loadChapter(t)} className="bg-white rounded-xl p-5 border border-slate-200 hover:border-[#002046] hover:shadow-md transition-all text-left">
-              <span className="text-3xl block mb-2">{t.icon}</span>
-              <h4 className="font-bold text-sm text-slate-800">{t.name}</h4>
-              <span className="text-xs text-slate-400">Year {t.year}</span>
-              {avg>0&&<div className="mt-2 w-full bg-slate-100 rounded-full h-1"><div className="bg-indigo-500 h-1 rounded-full" style={{width:`${avg}%`}}></div></div>}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-
-  if (loading) return <div className="flex flex-col items-center justify-center h-96"><div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-600 mb-4"></div><p className="text-slate-500">Generating chapter for {picked.name}...</p></div>;
-  if (!chapter) return <div className="text-center p-8">Failed to load. <button onClick={()=>setPicked(null)} className="text-blue-500 underline">Go back</button></div>;
-
-  return (
-    <div className="max-w-4xl mx-auto p-4">
-      <div className="flex items-center justify-between mb-4 sticky top-0 bg-white/95 backdrop-blur py-3 px-4 rounded-xl shadow-sm border border-slate-100 z-10">
-        <button onClick={()=>setPicked(null)} className="text-slate-500 hover:text-slate-800 flex items-center font-semibold text-sm"><svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg>Topics</button>
-        <div className="flex items-center gap-2">{['English','Korean','Chinese'].map(l=><button key={l} onClick={()=>doTranslate(l)} className={`px-3 py-1 rounded-full text-xs font-bold border transition-colors ${lang===l?'bg-[#002046] text-white border-[#002046]':'border-slate-300 text-slate-600 hover:border-[#002046]'}`}>{l}</button>)}</div>
-      </div>
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-5">
-        <div className="bg-[#002046] text-white p-8"><span className="text-4xl block mb-3">{picked.icon}</span><h1 className="text-3xl font-bold font-serif mb-2">{chapter.title}</h1><p className="text-blue-200 leading-relaxed">{get('intro',chapter.introduction)}</p></div>
-        <div className="p-8">
-          {chapter.sections?.map((s,i)=>(
-            <div key={i} className="mb-8">
-              <h2 className="text-xl font-bold text-[#002046] mb-3 font-serif flex items-center"><span className="w-8 h-8 bg-[#C5A059] text-white rounded-full flex items-center justify-center text-sm font-bold mr-3 flex-shrink-0">{i+1}</span>{s.title}</h2>
-              <p className="text-slate-700 leading-relaxed">{get(i,s.content)}</p>
-            </div>
-          ))}
-          {chapter.keyConcepts?.length>0 && <div className="bg-indigo-50 rounded-xl p-5 mb-5 border border-indigo-100"><h3 className="text-base font-bold text-indigo-800 mb-3">🔑 Key Concepts</h3><ul className="space-y-1">{chapter.keyConcepts.map((c,i)=><li key={i} className="text-indigo-700 text-sm flex items-start"><span className="mr-2">•</span>{c}</li>)}</ul></div>}
-          {chapter.summary && <div className="bg-emerald-50 rounded-xl p-5 border border-emerald-100"><h3 className="text-base font-bold text-emerald-800 mb-2">📋 Summary</h3><p className="text-emerald-700 text-sm leading-relaxed">{chapter.summary}</p></div>}
-        </div>
-      </div>
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-5">
-        <h3 className="font-bold text-[#002046] mb-3 font-serif">📝 Vocabulary</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">{picked.vocabulary.map((v,i)=>(
-          <div key={i} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-            <div className="flex items-start justify-between">
-              <div><h4 className="font-bold text-slate-800 text-sm">{v.term}</h4><p className="text-xs text-slate-600 mt-1">{v.definition}</p></div>
-              <button onClick={()=>doExplain(v.term)} className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200 flex-shrink-0 font-bold">AI ✨</button>
-            </div>
-            {explainData[v.term] && <div className="mt-2 p-2 bg-white rounded-lg border border-indigo-100 text-xs text-indigo-800">{explainData[v.term]}</div>}
-          </div>
-        ))}</div>
-      </div>
-      {picked.phetUrl && <div className="bg-purple-50 rounded-2xl p-5 border border-purple-200"><h3 className="font-bold text-purple-800 mb-2">🧪 Interactive Simulation</h3><p className="text-sm text-purple-700 mb-3">Explore this topic hands-on with a PhET simulation.</p><a href={picked.phetUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center bg-purple-600 text-white px-5 py-2 rounded-xl font-bold text-sm hover:bg-purple-700">Open Simulation →</a></div>}
-    </div>
-  );
+function getLiveSession() {
+  const sheet = getOrCreateSheet(SHEET_NAME_SESSIONS, SESSION_HEADERS);
+  const rows  = sheetToObjects(sheet);
+  if (rows.length === 0) {
+    return { session: { isActive: false, content: '', questions: [], currentStage: 'WAITING', studentResponses: [] } };
+  }
+  const s = rows[rows.length - 1];
+  return { session: {
+    ...s,
+    isActive:         s.isActive === 'true' || s.isActive === true,
+    questions:        safeJSON(s.questions, []),
+    studentResponses: safeJSON(s.studentResponses, [])
+  }};
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ── TEACHER DASHBOARD ──────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-function TeacherDashboard({ student: teacher, onLaunchLive }) {
-  const [students, setStudents]   = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [selected, setSelected]   = useState(null);
-  const [insight, setInsight]     = useState(null);
-  const [loadingInsight, setLI]   = useState(false);
+function updateLiveSession(data) {
+  const sheet = getOrCreateSheet(SHEET_NAME_SESSIONS, SESSION_HEADERS);
+  const rows  = sheet.getDataRange().getValues();
 
-  useEffect(()=>{
-    const fetch = async () => { setLoading(true); try { const res = await api.getAllStudents(); if(res?.students) setStudents(res.students.filter(s=>s.role!=='TEACHER'&&s.email)); } catch {} setLoading(false); };
-    fetch();
-  }, []);
+  const row = SESSION_HEADERS.map(h => {
+    if (h === 'updatedAt') return new Date().toISOString();
+    if (h === 'id') return rows.length > 1 ? rows[rows.length-1][0] : Utilities.getUuid();
+    const val = data[h];
+    if (val === undefined || val === null) return '';
+    if (typeof val === 'object') return JSON.stringify(val);
+    return val;
+  });
 
-  const openStudent = async (s) => { setSelected(s); setInsight(null); setLI(true); try { setInsight(await AI.teacherInsights(s)); } catch {} setLI(false); };
-
-  const handleExportCSV = () => {
-    const headers = ['Email','Name','Grade','Predicted','Level','XP','Help Requests',...TOPICS.map(t=>t.name+' Avg%')];
-    const rows = students.map(s=>{ const scores=TOPICS.map(t=>{const m=s.mastery?.[t.id];if(!m)return '0';const v=Object.values(m);return Math.round(v.reduce((a,b)=>a+b,0)/v.length)+'';});return[s.email,s.name,s.currentGrade,s.predictedGrade,s.level,s.xp,s.helpUsageCount,...scores].join(','); });
-    const csv=[headers.join(','),...rows].join('\n');
-    const blob=new Blob([csv],{type:'text/csv'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`NLCS_Science_${new Date().toISOString().split('T')[0]}.csv`;document.body.appendChild(a);a.click();document.body.removeChild(a);
-  };
-
-  const gradeData = Object.values(GradeBand).map(g=>({ name:g.replace(' (','('), count:students.filter(s=>s.currentGrade===g).length }));
-
-  return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-        <div><h1 className="text-2xl font-bold text-[#002046] font-serif">Teacher Dashboard</h1><p className="text-slate-500 text-sm">NLCS Jeju Junior School · Science Overview</p></div>
-        <div className="flex gap-3 flex-wrap">
-          <button onClick={onLaunchLive} className="bg-red-600 text-white font-bold px-4 py-2 rounded-xl hover:bg-red-700 flex items-center text-sm shadow-sm"><span className="w-2 h-2 bg-white rounded-full animate-pulse mr-2"></span>Launch Live Session</button>
-          <button onClick={handleExportCSV} className="bg-[#002046] text-[#C5A059] font-bold px-4 py-2 rounded-xl hover:bg-[#002d5c] text-sm shadow-sm">Export CSV</button>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        {[{label:'Students',value:students.length,icon:'👩‍🎓'},{label:'Avg Grade',value:GradeBand.EXPECTED_PLUS.split(' ')[0],icon:'📊'},{label:'Active Today',value:students.filter(s=>s.lastSeen&&new Date(s.lastSeen)>new Date(Date.now()-86400000)).length,icon:'🟢'},{label:'Help Requests',value:students.reduce((a,s)=>a+(Number(s.helpUsageCount)||0),0),icon:'🆘'}].map(({label,value,icon})=>(
-          <div key={label} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm"><p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{icon} {label}</p><p className="text-3xl font-bold text-[#002046]">{value}</p></div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="xl:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-          <h3 className="font-bold text-[#002046] mb-4">Students {loading&&<span className="text-xs text-slate-400 font-normal ml-2">Loading...</span>}</h3>
-          {students.length === 0 && !loading && <p className="text-sm text-slate-400 text-center py-8">No students have signed in yet. Share the app link with your class!</p>}
-          <div className="space-y-2">
-            {students.map(s=>{
-              const avg=Object.values(s.mastery||{}).flatMap(m=>Object.values(m)).reduce((a,b,_,arr)=>a+b/arr.length,0);
-              return (
-                <div key={s.email} onClick={()=>openStudent(s)} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 hover:border-[#002046] cursor-pointer transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full overflow-hidden border border-slate-200 flex-shrink-0 bg-slate-100">{s.picture?<img src={s.picture} className="w-full h-full object-cover"/>:<AvatarSVG config={s.avatarConfig}/>}</div>
-                    <div><p className="font-bold text-slate-800 text-sm">{s.name}</p><p className="text-xs text-slate-400">{s.email}</p></div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="hidden md:block"><div className="w-20 bg-slate-100 rounded-full h-1.5"><div className="bg-indigo-500 h-1.5 rounded-full" style={{width:`${Math.round(avg)}%`}}></div></div><p className="text-[10px] text-slate-400 text-right">{Math.round(avg)}% avg</p></div>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded ${GRADE_COLOR[s.currentGrade]||'bg-slate-100'}`}>{(s.currentGrade||'').split('(')[0].trim()}</span>
-                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/></svg>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-          <h3 className="font-bold text-[#002046] mb-4">Grade Distribution</h3>
-          <div className="h-52"><ResponsiveContainer width="100%" height="100%"><BarChart data={gradeData}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/><XAxis dataKey="name" tick={{fontSize:8}}/><YAxis allowDecimals={false}/><Tooltip/><Bar dataKey="count" fill="#002046" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></div>
-        </div>
-      </div>
-
-      {/* Student Detail Drawer */}
-      {selected && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex justify-end backdrop-blur-sm">
-          <div className="w-full max-w-2xl bg-white h-full shadow-2xl overflow-y-auto">
-            <div className="p-6">
-              <button onClick={()=>setSelected(null)} className="mb-5 text-slate-500 hover:text-[#002046] flex items-center font-bold text-sm"><svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>Close</button>
-              <div className="flex items-center gap-4 mb-6 pb-5 border-b border-slate-100">
-                <div className="w-16 h-16 rounded-full overflow-hidden border-4 border-[#C5A059] flex-shrink-0">{selected.picture?<img src={selected.picture} className="w-full h-full object-cover"/>:<AvatarSVG config={selected.avatarConfig}/>}</div>
-                <div><h2 className="text-xl font-bold text-[#002046] font-serif">{selected.name}</h2><p className="text-slate-400 text-sm">{selected.email}</p><div className="flex gap-2 mt-1"><span className={`text-xs font-bold px-2 py-0.5 rounded ${GRADE_COLOR[selected.currentGrade]||''}`}>{selected.currentGrade}</span><span className="text-xs text-slate-400">Level {selected.level} · {selected.xp} XP</span></div></div>
-              </div>
-              <div className="mb-5">
-                <h3 className="font-bold text-[#002046] mb-3 text-sm">Topic Mastery</h3>
-                <div className="space-y-2">{Object.entries(selected.mastery||{}).map(([tId,modes])=>{ const t=TOPICS.find(x=>x.id===tId); const avg=Math.round(Object.values(modes).reduce((a,b)=>a+b,0)/Object.values(modes).length); return <div key={tId} className="flex items-center gap-3"><span className="text-sm w-5">{t?.icon}</span><div className="flex-1"><div className="flex justify-between mb-0.5"><p className="text-xs font-bold text-slate-700">{t?.name||tId}</p><span className={`text-xs font-bold ${avg>=80?'text-emerald-600':avg>=60?'text-yellow-600':'text-red-600'}`}>{avg}%</span></div><div className="w-full bg-slate-100 rounded-full h-1.5"><div className={`h-1.5 rounded-full ${avg>=80?'bg-emerald-500':avg>=60?'bg-yellow-500':'bg-red-400'}`} style={{width:`${avg}%`}}></div></div></div></div>; })}</div>
-              </div>
-              {loadingInsight ? <div className="flex items-center justify-center py-6"><div className="animate-spin rounded-full h-8 w-8 border-t-4 border-b-4 border-[#002046]"></div><span className="ml-3 text-slate-500 text-sm">Generating AI insights...</span></div>
-              : insight ? (
-                <div>
-                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-100 mb-4"><p className="text-sm text-blue-800 leading-relaxed">{insight.summary}</p></div>
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="bg-green-50 rounded-xl p-3 border border-green-100"><h4 className="font-bold text-green-800 text-xs mb-2">✅ Strengths</h4><ul className="space-y-1">{insight.strengths?.map((s,i)=><li key={i} className="text-xs text-green-700">• {s}</li>)}</ul></div>
-                    <div className="bg-red-50 rounded-xl p-3 border border-red-100"><h4 className="font-bold text-red-800 text-xs mb-2">⚠️ Needs Work</h4><ul className="space-y-1">{insight.weaknesses?.map((w,i)=><li key={i} className="text-xs text-red-700">• {w}</li>)}</ul></div>
-                  </div>
-                  <div className="bg-white rounded-xl border border-slate-200 p-4"><h4 className="font-bold text-[#002046] text-sm mb-3">🎯 Action Steps</h4><div className="space-y-3">{insight.actionableSteps?.map((s,i)=><div key={i} className="flex items-start"><span className="w-5 h-5 bg-[#002046] text-white rounded-full flex items-center justify-center text-[10px] font-bold mr-2 flex-shrink-0">{i+1}</span><div><p className="text-xs font-bold text-slate-700">{s.step}</p><a href={`https://www.google.com/search?q=${encodeURIComponent(s.resourceSearchTerm)}`} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline">{s.resourceTitle}</a></div></div>)}</div></div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  if (rows.length > 1) {
+    // Update last row
+    sheet.getRange(rows.length, 1, 1, row.length).setValues([row]);
+  } else {
+    sheet.appendRow(row);
+  }
+  return { success: true };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ── LIVE SESSION ───────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-function LiveSessionManager({ student, onExit }) {
-  const [stage, setStage]   = useState('UPLOAD');
-  const [content, setCont]  = useState('');
-  const [loading, setLoad]  = useState(false);
-  const [session, setSess]  = useState(null);
-  const [qIdx, setQIdx]     = useState(0);
-  const [analysis, setAnal] = useState(null);
-  const [showDrive, setSD]  = useState(false);
-
-  const generate = async () => {
-    if (!content.trim()) return; setLoad(true);
-    const qs = await AI.generateLiveQuestions(content);
-    if (qs.length > 0) {
-      const s = {isActive:true,content,questions:qs,currentStage:'CONTENT_VIEW',studentResponses:[]};
-      await api.updateLiveSession(s); setSess(s); setStage('POLL');
-    } else alert('Could not generate questions. Add more content.');
-    setLoad(false);
-  };
-
-  const update = async (patch) => { const s={...session,...patch}; setSess(s); await api.updateLiveSession(s); };
-  const analyze = async () => { setLoad(true); const stats=session.questions.map(q=>({qId:q.id,correct:session.studentResponses.filter(r=>r.questionId===q.id&&r.answer===q.correctAnswer).length,total:session.studentResponses.filter(r=>r.questionId===q.id).length})); setAnal(await AI.analyzeLiveResults(session.questions,stats)); setStage('ANALYSIS'); setLoad(false); };
-  const results = () => session?.questions[qIdx]?.options.map(opt=>({option:opt,count:session.studentResponses.filter(r=>r.questionId===session.questions[qIdx]?.id&&r.answer===opt).length})) || [];
-
-  if (stage==='UPLOAD') return (
-    <div className="max-w-3xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-6"><button onClick={onExit} className="text-slate-500 hover:text-slate-800 flex items-center font-semibold text-sm"><svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg>Back</button><h2 className="text-2xl font-bold text-[#002046] font-serif">📡 Live Session</h2><div/></div>
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
-        <h3 className="font-bold text-slate-800 mb-2">Paste Lesson Content</h3>
-        <p className="text-sm text-slate-500 mb-4">AI will generate quiz questions for your class in real time.</p>
-        <div className="flex gap-2 mb-3"><button onClick={()=>setSD(true)} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-bold">📁 Load from Drive (Demo)</button></div>
-        <textarea value={content} onChange={e=>setCont(e.target.value)} className="w-full p-4 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-[#002046] min-h-48 text-sm font-mono resize-none" placeholder="Paste your lesson notes here..."/>
-        <button onClick={generate} disabled={!content.trim()||loading} className="mt-4 w-full bg-[#002046] text-[#C5A059] font-bold py-3 rounded-xl hover:bg-[#002d5c] disabled:opacity-40">{loading?'Generating...':'Generate Live Quiz →'}</button>
-      </div>
-      {showDrive && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md"><h3 className="font-bold text-[#002046] mb-4">📁 Drive Files (Demo)</h3>{MOCK_DRIVE_FILES.map(f=><button key={f.id} onClick={()=>{setCont(f.content);setSD(false);}} className="w-full text-left p-3 mb-2 rounded-xl border border-slate-200 hover:border-[#002046] transition-colors"><p className="font-bold text-sm text-slate-800">{f.name}</p><p className="text-xs text-slate-400">{f.updatedAt}</p></button>)}<button onClick={()=>setSD(false)} className="w-full mt-2 py-2 text-slate-500 border border-slate-200 rounded-xl text-sm hover:bg-slate-50">Cancel</button></div></div>}
-    </div>
-  );
-
-  if (stage==='POLL') return (
-    <div className="max-w-3xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-4"><div className="flex items-center"><span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span><span className="text-xs font-bold text-red-600 uppercase">Live Session Active</span></div><button onClick={analyze} disabled={loading} className="bg-[#C5A059] text-[#002046] font-bold px-5 py-2 rounded-xl text-sm hover:bg-[#b08d4b] disabled:opacity-50">{loading?'Analysing...':'End & Analyse'}</button></div>
-      <div className="grid grid-cols-3 gap-2 mb-4">
-        {[{label:'Share Content',stage:'CONTENT_VIEW',color:'blue'},{label:'Start Quiz',stage:'QUIZ',color:'green'},{label:'Pause',stage:'WAITING',color:'slate'}].map(({label,stage:s,color})=><button key={s} onClick={()=>update({currentStage:s})} className={`py-2 rounded-xl text-xs font-bold border-2 ${session?.currentStage===s?`bg-${color}-600 text-white border-${color}-600`:`border-slate-300 text-slate-600 hover:bg-slate-50`}`}>{label}</button>)}
-      </div>
-      {session?.questions.length>0&&(
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-          <div className="flex gap-2 mb-4 flex-wrap">{session.questions.map((_,i)=><button key={i} onClick={()=>setQIdx(i)} className={`px-3 py-1 rounded-full text-xs font-bold ${qIdx===i?'bg-[#002046] text-white':'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Q{i+1}</button>)}</div>
-          <p className="font-bold text-slate-800 mb-3 text-sm">{session.questions[qIdx]?.text}</p>
-          <div className="h-40"><ResponsiveContainer width="100%" height="100%"><BarChart data={results()}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/><XAxis dataKey="option" tick={{fontSize:9}}/><YAxis allowDecimals={false}/><Tooltip/><Bar dataKey="count" fill="#002046" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></div>
-          <p className="text-xs text-slate-400 mt-2">Correct: <strong>{session.questions[qIdx]?.correctAnswer}</strong> · Responses: {session.studentResponses.filter(r=>r.questionId===session.questions[qIdx]?.id).length}</p>
-        </div>
-      )}
-    </div>
-  );
-
-  if (stage==='ANALYSIS'&&analysis) return (
-    <div className="max-w-3xl mx-auto p-6">
-      <h2 className="text-2xl font-bold text-[#002046] mb-5 font-serif">📊 Session Analysis</h2>
-      <div className={`rounded-2xl p-5 mb-5 ${analysis.recommendation==='INDEPENDENT_STUDY'?'bg-green-50 border border-green-200':analysis.recommendation==='TEACHER_INTERVENTION'?'bg-red-50 border border-red-200':'bg-amber-50 border border-amber-200'}`}>
-        <h3 className="font-bold text-lg mb-2">{analysis.recommendation==='INDEPENDENT_STUDY'?'✅ They got it!':analysis.recommendation==='TEACHER_INTERVENTION'?'🔴 Re-teach Needed':'🟡 Split the Group'}</h3>
-        <p className="text-sm">{analysis.summary}</p>
-      </div>
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 mb-5"><h3 className="font-bold text-[#002046] mb-3">Action Items</h3><ul className="space-y-2">{analysis.actionItems?.map((item,i)=><li key={i} className="flex items-start text-sm"><span className="w-5 h-5 bg-[#002046] text-white rounded-full flex items-center justify-center text-[10px] font-bold mr-2 flex-shrink-0">{i+1}</span>{item}</li>)}</ul></div>
-      <button onClick={onExit} className="bg-[#002046] text-[#C5A059] font-bold px-8 py-3 rounded-xl hover:bg-[#002d5c]">Finish Session</button>
-    </div>
-  );
-
-  return <div className="text-center p-8"><button onClick={onExit} className="text-blue-500 underline">Return to Dashboard</button></div>;
+// ── Utility ───────────────────────────────────────────────────
+function safeJSON(val, fallback) {
+  if (!val || val === '') return fallback;
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); }
+  catch(e) { return fallback; }
 }
-
-function StudentLiveSession({ student, onExit }) {
-  const [session, setSess]  = useState(null);
-  const [answered, setAns]  = useState({});
-  const [loading, setLoad]  = useState(true);
-
-  useEffect(()=>{ const poll = async () => { try { const r=await api.getLiveSession(); if(r?.session) setSess(r.session); } catch {} }; poll(); const iv=setInterval(poll,5000); setLoad(false); return ()=>clearInterval(iv); }, []);
-
-  const answer = async (qId, ans) => {
-    setAns(p=>({...p,[qId]:ans}));
-    const s={...session,studentResponses:[...(session.studentResponses||[]),{studentId:student.email,questionId:qId,answer:ans}]};
-    setSess(s); await api.updateLiveSession(s);
-  };
-
-  if (loading) return <div className="flex items-center justify-center h-96"><div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-[#002046]"></div></div>;
-
-  if (!session?.isActive) return (
-    <div className="flex flex-col items-center justify-center h-96 text-center p-6">
-      <span className="text-6xl mb-4 animate-pulse">📡</span>
-      <h2 className="text-2xl font-bold text-[#002046] mb-2 font-serif">Waiting for your teacher...</h2>
-      <p className="text-slate-500 mb-6">Stay on this page — your teacher will start the session shortly.</p>
-      <button onClick={onExit} className="text-sm text-slate-400 underline">Leave session</button>
-    </div>
-  );
-
-  if (session.currentStage==='CONTENT_VIEW') return (
-    <div className="max-w-3xl mx-auto p-6"><div className="bg-white rounded-2xl shadow border border-slate-200 p-8"><div className="flex items-center mb-4"><span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span><span className="text-xs font-bold text-red-600 uppercase">Live — Reading Time</span></div><h2 className="text-2xl font-bold text-[#002046] mb-4 font-serif">Lesson Content</h2><p className="text-slate-700 leading-relaxed whitespace-pre-line">{session.content}</p><p className="text-sm text-slate-400 mt-6 italic">Read carefully — questions will follow!</p></div></div>
-  );
-
-  const unanswered = session.questions?.filter(q=>!answered[q.id]);
-  const currentQ   = unanswered?.[0];
-  const allDone    = session.questions?.length>0 && unanswered?.length===0;
-  const score      = Object.keys(answered).filter(qId=>{ const q=session.questions?.find(x=>x.id===qId); return q&&answered[qId]===q.correctAnswer; }).length;
-
-  if (session.currentStage==='QUIZ'&&currentQ) return (
-    <div className="max-w-2xl mx-auto p-6"><div className="flex items-center mb-4"><span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span><span className="text-xs font-bold text-red-600 uppercase">Live Quiz</span></div>
-    <div className="bg-white rounded-2xl shadow border border-slate-200 p-8">
-      <p className="text-xs text-slate-400 mb-2 font-bold">Question {Object.keys(answered).length+1} of {session.questions.length}</p>
-      <h2 className="text-xl font-bold text-slate-800 mb-6">{currentQ.text}</h2>
-      <div className="space-y-3">{currentQ.options?.map((opt,i)=><button key={i} onClick={()=>answer(currentQ.id,opt)} className="w-full text-left p-4 rounded-xl border-2 border-slate-200 hover:border-[#002046] hover:bg-blue-50 font-medium transition-all"><span className="font-bold mr-2">{String.fromCharCode(65+i)}.</span>{opt}</button>)}</div>
-    </div></div>
-  );
-
-  if (allDone||session.currentStage==='ENDED') return (
-    <div className="max-w-lg mx-auto p-6 text-center"><div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-10">
-      <span className="text-6xl block mb-4">{score===session.questions?.length?'🏆':score>session.questions?.length/2?'👏':'💪'}</span>
-      <h2 className="text-2xl font-bold text-[#002046] mb-2 font-serif">Session Complete!</h2>
-      <p className="text-slate-600 mb-4">You got <strong>{score}</strong> out of <strong>{session.questions?.length}</strong> correct.</p>
-      <div className="w-full bg-slate-100 rounded-full h-4 mb-6"><div className="bg-[#002046] h-4 rounded-full" style={{width:`${session.questions?.length?Math.round(score/session.questions.length*100):0}%`}}></div></div>
-      <button onClick={onExit} className="bg-[#002046] text-[#C5A059] font-bold px-8 py-3 rounded-xl hover:bg-[#002d5c]">Back to Dashboard</button>
-    </div></div>
-  );
-
-  return <div className="flex items-center justify-center h-96"><div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-[#002046]"></div></div>;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ── MAIN APP ───────────────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
-function App() {
-  const [googleUser, setGoogleUser] = useState(null);
-  const [student, setStudent]       = useState(null);
-  const [activityLog, setLog]       = useState([]);
-  const [view, setView]             = useState(AppView.DASHBOARD);
-  const [currentTopic, setTopic]    = useState(null);
-  const [currentMode, setMode]      = useState(QuizMode.CONTENT);
-  const [showAvatar, setShowAvatar] = useState(false);
-  const [saving, setSaving]         = useState(false);
-
-  // Sign in flow
-  const handleSignIn = async (gUser) => {
-    setGoogleUser(gUser);
-    // Try to load existing student from Sheets
-    let s = null;
-    try {
-      const res = await api.getStudent(gUser.email);
-      s = res?.student || null;
-    } catch {}
-
-    if (!s) {
-      // Brand new student
-      s = buildNewStudent(gUser);
-      try { await api.upsertStudent({...s, lastSeen: new Date().toISOString()}); } catch {}
-    } else {
-      // Update last seen
-      s.lastSeen = new Date().toISOString();
-      try { await api.upsertStudent(s); } catch {}
-    }
-    setStudent(s);
-    // Load activity log
-    try { const logRes = await api.getActivityLog(gUser.email); if(logRes?.log) setLog(logRes.log); } catch {}
-  };
-
-  const saveStudent = async (updated) => {
-    setSaving(true);
-    setStudent(updated);
-    try { await api.upsertStudent({...updated, lastSeen: new Date().toISOString()}); } catch {}
-    setSaving(false);
-  };
-
-  const handleQuizComplete = async (score, qCount, correctCount) => {
-    if (!currentTopic || !student) { setView(AppView.DASHBOARD); return; }
-    const updMastery = { ...student.mastery };
-    if (!updMastery[currentTopic.id]) updMastery[currentTopic.id] = {CONTENT:0,COMMUNICATION:0,SCIENTIFIC:0,DATA_ANALYSIS:0};
-    if (score > (updMastery[currentTopic.id][currentMode]||0)) updMastery[currentTopic.id][currentMode] = score;
-    const newXP    = student.xp + (score > 80 ? 50 : score > 50 ? 20 : 5);
-    const newLevel = Math.floor(newXP / 500) + 1;
-    // Badge logic
-    const badges = [...(student.badges||[])];
-    if (score === 100 && !badges.includes('Perfect Score')) badges.push('Perfect Score');
-    if (Object.keys(updMastery).length >= 5 && !badges.includes('Explorer')) badges.push('Explorer');
-    if (Object.values(updMastery).every(m=>Object.values(m).some(s=>s>=80)) && !badges.includes('Master Scientist')) badges.push('Master Scientist');
-    const updated = {...student, mastery:updMastery, xp:newXP, level:newLevel, badges};
-    await saveStudent(updated);
-    setView(AppView.DASHBOARD);
-  };
-
-  const handleAvatarSave = async (cfg) => { await saveStudent({...student, avatarConfig:cfg}); setShowAvatar(false); };
-
-  const isTeacher = student?.role === 'TEACHER' || TEACHER_EMAILS.includes(googleUser?.email);
-
-  if (!googleUser || !student) return <SignInScreen onSignIn={handleSignIn}/>;
-
-  const renderContent = () => {
-    if (isTeacher) {
-      if (view===AppView.LIVE_SESSION) return <LiveSessionManager student={student} onExit={()=>setView(AppView.DASHBOARD)}/>;
-      return <TeacherDashboard student={student} onLaunchLive={()=>setView(AppView.LIVE_SESSION)}/>;
-    }
-    switch(view) {
-      case AppView.DASHBOARD:    return <StudentDashboard student={student} activityLog={activityLog} onStartQuiz={()=>setView(AppView.TOPIC_SELECT)} onOpenTextbook={()=>setView(AppView.TEXTBOOK)} onJoinLive={()=>setView(AppView.STUDENT_LIVE)} onEditAvatar={()=>setShowAvatar(true)}/>;
-      case AppView.TOPIC_SELECT: return <TopicSelector student={student} onSelect={(t,m)=>{setTopic(t);setMode(m);setView(AppView.QUIZ);}}/>;
-      case AppView.QUIZ:         return currentTopic ? <QuizModule student={student} topic={currentTopic} mode={currentMode} onExit={()=>setView(AppView.TOPIC_SELECT)} onComplete={handleQuizComplete}/> : <div className="text-center p-8">No topic selected. <button onClick={()=>setView(AppView.TOPIC_SELECT)} className="text-blue-500 underline">Pick one</button></div>;
-      case AppView.TEXTBOOK:     return <TextbookReader student={student} onExit={()=>setView(AppView.DASHBOARD)}/>;
-      case AppView.STUDENT_LIVE: return <StudentLiveSession student={student} onExit={()=>setView(AppView.DASHBOARD)}/>;
-      default:                   return <StudentDashboard student={student} activityLog={activityLog} onStartQuiz={()=>setView(AppView.TOPIC_SELECT)} onOpenTextbook={()=>setView(AppView.TEXTBOOK)} onJoinLive={()=>setView(AppView.STUDENT_LIVE)} onEditAvatar={()=>setShowAvatar(true)}/>;
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <nav className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-14">
-            <div className="flex items-center cursor-pointer gap-3" onClick={()=>setView(AppView.DASHBOARD)}>
-              <svg className="h-9 w-auto" viewBox="0 0 100 100" fill="none"><ellipse cx="50" cy="55" rx="42" ry="12" stroke="#C5A059" strokeWidth="3" transform="rotate(-30 50 55)" strokeOpacity="0.6"/><circle cx="18" cy="40" r="3" fill="#C5A059"/><path d="M45,80 Q50,95 55,80" fill="#ef4444"/><path d="M48,80 Q50,90 52,80" fill="#fbbf24"/><path d="M50,15 Q70,50 65,80 L35,80 Q30,50 50,15 Z" fill="#002046"/><path d="M35,75 L20,90 L38,82 Z" fill="#002046"/><path d="M65,75 L80,90 L62,82 Z" fill="#002046"/><circle cx="50" cy="45" r="10" fill="#4B9CD3" stroke="#fff" strokeWidth="2"/><circle cx="53" cy="42" r="3" fill="white" opacity="0.6"/></svg>
-              <div className="hidden sm:block"><p className="text-[9px] text-[#C5A059] font-bold uppercase tracking-widest leading-none">NLCS Jeju</p><p className="text-base font-bold font-serif text-[#002046] leading-none">Curiosity Drive</p></div>
-            </div>
-            <div className="flex items-center gap-3">
-              {saving && <span className="text-xs text-slate-400 animate-pulse">Saving...</span>}
-              <div className="flex items-center gap-2 cursor-pointer group" onClick={()=>!isTeacher&&setShowAvatar(true)}>
-                <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-[#C5A059] bg-slate-100 flex-shrink-0">
-                  {student.picture ? <img src={student.picture} className="w-full h-full object-cover"/> : <AvatarSVG config={student.avatarConfig}/>}
-                </div>
-                <div className="hidden sm:block text-right">
-                  <p className="text-xs font-bold text-slate-700 leading-none">{student.name.split(' ')[0]}</p>
-                  <p className="text-[10px] text-slate-400 leading-none">{isTeacher?'Teacher':'Level '+student.level+' · '+student.xp+' XP'}</p>
-                </div>
-              </div>
-              <button onClick={()=>{setGoogleUser(null);setStudent(null);}} className="text-xs text-slate-400 hover:text-red-500 px-2 py-1 rounded hover:bg-red-50 transition-colors" title="Sign out">Sign out</button>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      <main className="flex-grow">{renderContent()}</main>
-
-      <footer className="bg-[#002046] text-white border-t-4 border-[#C5A059]">
-        <div className="max-w-7xl mx-auto py-5 px-4 flex flex-col md:flex-row justify-between items-center">
-          <div className="mb-2 md:mb-0"><h4 className="font-serif font-bold text-[#C5A059]">NLCS Jeju Junior School</h4><p className="text-xs text-blue-300">Start here. Go anywhere.</p></div>
-          <p className="text-xs text-blue-400">© 2024 Curiosity Drive · UK National Curriculum</p>
-        </div>
-      </footer>
-
-      {showAvatar && <AvatarCreator initialConfig={student.avatarConfig} onSave={handleAvatarSave} onCancel={()=>setShowAvatar(false)}/>}
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
-</script>
-</body>
-</html>
