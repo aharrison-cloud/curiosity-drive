@@ -126,39 +126,32 @@ async function callGeminiQuestion(prompt) {
 const AI = {
   async question(topic, mode, diff, previousQuestions=[]) {
 
-    const modeGuide = {
-      CONTENT: `TYPE: MULTIPLE_CHOICE
-FOCUS: Test factual knowledge of the topic.
-Write a question about one of these curriculum points: ${topic.curriculumPoints.join(' | ')}
-Good question styles: "What is...?" / "Which of these is an example of...?" / "What happens when...?" / "Which statement is correct about...?"
-Make all 4 options plausible — students should have to think, not just guess.`,
+    const modeGuides = {
+      CONTENT: 'TYPE: MULTIPLE_CHOICE\nFOCUS: Test factual knowledge.\n'
+        + 'Write a question about one of these curriculum points: ' + topic.curriculumPoints.join(' | ') + '\n'
+        + 'Good styles: What is...? / Which of these is an example of...? / What happens when...? / Which statement is correct?\n'
+        + 'Make all 4 options plausible so students must think carefully.',
 
-      COMMUNICATION: `TYPE: OPEN_TEXT (no options needed)
-FOCUS: Scientific writing and explanation.
-Write a question starting with "Explain...", "Describe how...", or "Why does..."
-The student must write 3-5 full sentences using scientific vocabulary.
-Target one of these curriculum points: ${topic.curriculumPoints.join(' | ')}`,
+      COMMUNICATION: 'TYPE: OPEN_TEXT (no options field needed)\nFOCUS: Scientific writing and explanation.\n'
+        + 'Write a question starting with Explain..., Describe how..., or Why does...\n'
+        + 'The student writes 3-5 full sentences using scientific vocabulary.\n'
+        + 'Target one of these curriculum points: ' + topic.curriculumPoints.join(' | '),
 
-      SCIENTIFIC: `TYPE: MULTIPLE_CHOICE
-FOCUS: Working Scientifically skills.
-Write a scenario-based question about: fair tests, variables (independent/dependent/control), predictions, conclusions, or reliability.
-Example format: "A student investigates [X]. Which variable should they keep the same to make it a fair test?"
-All 4 options must be plausible scientific answers.`,
+      SCIENTIFIC: 'TYPE: MULTIPLE_CHOICE\nFOCUS: Working Scientifically skills.\n'
+        + 'Write a scenario-based question about: fair tests, variables (independent/dependent/control), predictions, conclusions, or reliability.\n'
+        + 'Format: A student is investigating [X]. Which variable should they change/keep the same?\n'
+        + 'All 4 options must be plausible scientific answers.',
 
-      DATA_ANALYSIS: `TYPE: MULTIPLE_CHOICE
-FOCUS: Interpreting data.
-Create a simple data table (tableData field) with 3-4 columns and 4-5 rows showing realistic scientific data.
-Write a question asking the student to: spot a pattern, identify an anomaly, calculate a difference, or draw a conclusion.
-Example: "Based on the table, which [X] was most effective?"`
-    }[mode] || 'TYPE: MULTIPLE_CHOICE
-FOCUS: Test understanding of the topic.';
+      DATA_ANALYSIS: 'TYPE: MULTIPLE_CHOICE\nFOCUS: Interpreting data from a table.\n'
+        + 'Include a tableData field with 3-4 columns and 4-5 rows of realistic scientific measurements.\n'
+        + 'Ask the student to spot a pattern, find an anomaly, calculate a difference, or draw a conclusion from the data.\n'
+        + 'Example question style: Based on the table, which material showed the greatest change?'
+    };
+    const modeGuide = modeGuides[mode] || 'TYPE: MULTIPLE_CHOICE\nFOCUS: Test understanding of the topic.';
 
     const prevWarning = previousQuestions.length > 0
-      ? `
-
-You MUST write a COMPLETELY DIFFERENT question. Previous questions used:
-${previousQuestions.map((q,i)=>`${i+1}. ${q}`).join('
-')}`
+      ? '\n\nYou MUST write a COMPLETELY DIFFERENT question. Previous questions were:\n'
+        + previousQuestions.map((q,i) => (i+1) + '. ' + q).join('\n')
       : '';
 
     const prompt = `You are writing a science assessment question for UK Primary School Year ${topic.year} students (age ${topic.year===5?'9-10':'10-11'}).
