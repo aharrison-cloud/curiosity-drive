@@ -90,10 +90,69 @@ async function callGemini(prompt, schema=null) {
 }
 
 const AI = {
-  async question(topic,mode,diff) {
-    const mi = {CONTENT:'Test factual knowledge. Prefer MULTIPLE_CHOICE.',COMMUNICATION:'MUST be OPEN_TEXT. Ask student to explain a concept in 3-5 sentences.',SCIENTIFIC:'Focus on fair tests, variables, interpreting data. MULTIPLE_CHOICE.',DATA_ANALYSIS:'Provide a tableData field with data. Ask to interpret patterns. MULTIPLE_CHOICE.'}[mode]||'';
-    return callGemini(`UK National Curriculum Year ${topic.year} science question about "${topic.name}". Points: ${topic.curriculumPoints.join(', ')}. Difficulty: ${diff}. ${mi} British English. JSON only.`,
-      {type:'OBJECT',properties:{type:{type:'STRING',enum:['MULTIPLE_CHOICE','OPEN_TEXT']},text:{type:'STRING'},options:{type:'ARRAY',items:{type:'STRING'}},correctAnswer:{type:'STRING'},explanation:{type:'STRING'},hint:{type:'STRING'},tableData:{type:'OBJECT',properties:{headers:{type:'ARRAY',items:{type:'STRING'}},rows:{type:'ARRAY',items:{type:'ARRAY',items:{type:'STRING'}}}}},videoSearchTerm:{type:'STRING'},difficulty:{type:'STRING'}},required:['type','text','explanation','hint']});
+  async question(topic, mode, diff, previousQuestions=[]) {
+    const modeInstructions = {
+      CONTENT: `Generate a MULTIPLE_CHOICE question testing factual recall or conceptual understanding.
+- Ask about definitions, processes, examples, or cause-and-effect relationships.
+- All 4 options must be plausible but only one correct.
+- Example styles: "What is...?", "Which of these...?", "What happens when...?"`,
+      COMMUNICATION: `Generate an OPEN_TEXT question requiring the student to write 3-5 sentences explaining a scientific concept.
+- Must start with "Explain...", "Describe...", or "How does...".
+- Focus on scientific vocabulary and clear explanation.
+- Example: "Explain how the circulatory system transports oxygen around the body."`,
+      SCIENTIFIC: `Generate a MULTIPLE_CHOICE question about Working Scientifically skills:
+- Fair tests, variables (independent/dependent/control), reliability, predictions, conclusions.
+- Frame as a scenario: "A student is investigating... which variable should they change?"
+- All 4 options must be plausible.`,
+      DATA_ANALYSIS: `Generate a MULTIPLE_CHOICE question that requires interpreting a simple data table.
+- Create a realistic data table in the tableData field (3-4 columns, 4-5 rows of data).
+- Question must ask student to spot a pattern, trend, anomaly, or calculate a difference/mean.
+- Example: "Based on the table, which material was the best conductor?"`
+    }[mode] || '';
+
+    const prevList = previousQuestions.length > 0
+      ? `\n\nIMPORTANT: Do NOT repeat any of these previous questions:\n${previousQuestions.map((q,i) => `${i+1}. ${q}`).join('\n')}`
+      : '';
+
+    const prompt = `You are an experienced UK Primary School Science teacher creating assessment questions.
+
+Topic: ${topic.name} (Year ${topic.year})
+UK National Curriculum Points: ${topic.curriculumPoints.join('; ')}
+Difficulty: ${diff} (${diff==='easy'?'recall and recognition':diff==='medium'?'understanding and application':'analysis and evaluation'})
+Key Vocabulary: ${topic.vocabulary.map(v=>v.term).join(', ')}
+
+Task: ${modeInstructions}
+
+Requirements:
+- Use British English spelling (colour, centre, practise, recognise)
+- Match difficulty level precisely
+- Question must be NEW and DIFFERENT from previous ones${prevList}
+- For MULTIPLE_CHOICE: exactly 4 options, one correct, three plausible distractors
+- correctAnswer must be copied EXACTLY from one of the options
+- Include a helpful hint that guides without giving away the answer
+- Include a clear explanation of why the correct answer is right
+- Include a YouTube search term for a relevant KS2 science video
+
+Return ONLY valid JSON, no other text.`;
+
+    return callGemini(prompt, {
+      type:'OBJECT',
+      properties:{
+        type:{type:'STRING',enum:['MULTIPLE_CHOICE','OPEN_TEXT']},
+        text:{type:'STRING'},
+        options:{type:'ARRAY',items:{type:'STRING'}},
+        correctAnswer:{type:'STRING'},
+        explanation:{type:'STRING'},
+        hint:{type:'STRING'},
+        tableData:{type:'OBJECT',properties:{
+          headers:{type:'ARRAY',items:{type:'STRING'}},
+          rows:{type:'ARRAY',items:{type:'ARRAY',items:{type:'STRING'}}}
+        }},
+        videoSearchTerm:{type:'STRING'},
+        difficulty:{type:'STRING',enum:['easy','medium','hard']}
+      },
+      required:['type','text','explanation','hint','correctAnswer']
+    });
   },
   async evaluate(question,answer) {
     const ci = question.mode==='COMMUNICATION'?'Give feedback as "🧪 Science: [comment]. ✍️ Writing Tip: [advice]."':'';
@@ -348,15 +407,46 @@ function QuizModule({student,topic,mode,onExit,onComplete}) {
   const [correct,setCorrect]=useState(0);
   const [diff,setDiff]=useState('medium');
   const [err,setErr]=useState('');
+  const [previousQs,setPreviousQs]=useState([]); // track to avoid repeats
 
   useEffect(()=>{loadQ();},[]);
 
-  const fallback = ()=>({type:'MULTIPLE_CHOICE',text:`Which of these relates to ${topic.name}?`,options:[topic.vocabulary[0]?.term||'A','B','C','D'],correctAnswer:topic.vocabulary[0]?.term||'A',explanation:topic.vocabulary[0]?.definition||'See your textbook.',hint:'Think about key vocabulary.',difficulty:'easy',videoSearchTerm:topic.videoSearchTerm});
+  const getFallback = (idx)=>{
+    // Rotate through vocabulary so fallback is never the same
+    const vocab = topic.vocabulary;
+    const v = vocab[idx % vocab.length] || vocab[0];
+    const wrong = vocab.filter((_,i)=>i!==idx%vocab.length).map(x=>x.term);
+    // Pad wrong answers if needed
+    const fillers = ['None of the above','All of the above','It depends on conditions'];
+    while(wrong.length < 3) wrong.push(fillers[wrong.length]);
+    const opts = [v.term,...wrong.slice(0,3)].sort(()=>Math.random()-0.5);
+    return {
+      type:'MULTIPLE_CHOICE',
+      text:`What is the definition of "${v.term}" in ${topic.name}?`,
+      options:opts,
+      correctAnswer:v.term,
+      explanation:v.definition,
+      hint:`Think about what "${v.term}" means in the context of ${topic.name}.`,
+      difficulty:diff,
+      videoSearchTerm:topic.videoSearchTerm
+    };
+  };
 
   const loadQ = async()=>{
     setLoading(true);setResult(null);setSel('');setText('');setHint(false);setHintUsed(false);setErr('');
-    try { const res=await AI.question(topic,mode,diff); setQ(res||fallback()); }
-    catch(e){setErr('Using fallback question.');setQ(fallback());}
+    try {
+      const res = await AI.question(topic, mode, diff, previousQs);
+      if (res && res.text) {
+        setQ(res);
+        setPreviousQs(prev=>[...prev, res.text].slice(-8)); // remember last 8
+      } else {
+        setErr('AI could not generate a question. Using vocabulary question.');
+        setQ(getFallback(qCount));
+      }
+    } catch(e){
+      setErr('AI unavailable. Using vocabulary question.');
+      setQ(getFallback(qCount));
+    }
     setLoading(false);
   };
 
@@ -371,12 +461,22 @@ function QuizModule({student,topic,mode,onExit,onComplete}) {
     }
     if(ok) setCorrect(c=>c+1);
     setQCount(c=>c+1);setResult({ok,fb,grade});setLoading(false);
-    if(ok&&diff==='easy') setDiff('medium'); else if(ok&&diff==='medium') setDiff('hard');
-    else if(!ok&&diff==='hard') setDiff('medium'); else if(!ok&&diff==='medium') setDiff('easy');
+    // Adaptive difficulty
+    if(ok && diff==='easy') setDiff('medium');
+    else if(ok && diff==='medium') setDiff('hard');
+    else if(!ok && diff==='hard') setDiff('medium');
+    else if(!ok && diff==='medium') setDiff('easy');
     try{await api.logActivity({email:student.email,studentName:student.name,topicId:topic.id,topicName:topic.name,mode,score:ok?100:0,usedHelp:hintUsed,grade});}catch{}
   };
 
-  if (loading&&!result) return <div className="flex flex-col items-center justify-center h-96"><div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-600 mb-4"></div><p className="text-slate-500">Generating question ({diff})...</p></div>;
+  if (loading&&!result) return (
+    <div className="flex flex-col items-center justify-center h-96">
+      <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-600 mb-4"></div>
+      <p className="text-slate-700 font-bold">Generating {diff} question...</p>
+      <p className="text-slate-400 text-sm mt-2">{topic.icon} {topic.name} · {mode.replace('_',' ')}</p>
+      {qCount>0&&<p className="text-slate-400 text-xs mt-1">Making sure it is different from your previous questions</p>}
+    </div>
+  );
 
   return (
     <div className="max-w-3xl mx-auto p-4">
