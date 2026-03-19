@@ -129,7 +129,6 @@ Return ONLY a JSON array, no other text.`;
     return callGemini(prompt,
       {type:'ARRAY',items:{type:'OBJECT',properties:{id:{type:'STRING'},text:{type:'STRING'},options:{type:'ARRAY',items:{type:'STRING'}},correctAnswer:{type:'STRING'}},required:['id','text','options','correctAnswer']}}) || [];
   },
-  },
   async liveAnalysis(questions,results) {
     return callGemini(`Analyse class quiz results.\nQuestions: ${JSON.stringify(questions)}\nPerformance: ${JSON.stringify(results)}\nRecommend: INDEPENDENT_STUDY / TEACHER_INTERVENTION / SPLIT_GROUP.\nSummary + 3 action items. British English.`,
       {type:'OBJECT',properties:{summary:{type:'STRING'},recommendation:{type:'STRING',enum:['INDEPENDENT_STUDY','TEACHER_INTERVENTION','SPLIT_GROUP']},actionItems:{type:'ARRAY',items:{type:'STRING'}}}});
