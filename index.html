@@ -151,6 +151,7 @@ const api = {
   getActivityLog: (email)=>api.get('getActivityLog',{email}),
   getLiveSession: ()=>api.get('getLiveSession'),
   updateLiveSession: (data)=>api.post('updateLiveSession',data),
+  submitFeedback: (data)=>api.post('submitFeedback',data),
 };
 
 // ═══════════════════════════════════════
@@ -705,168 +706,540 @@ function StudentDashboard({student,activityLog,onQuiz,onTextbook,onLive,onAvatar
 // ═══════════════════════════════════════
 // STUDENT LIVE SESSION
 // ═══════════════════════════════════════
+// ═══════════════════════════════════════
+// AI — extended for live session
+// ═══════════════════════════════════════
+async function getStudentPersonalFeedback(studentEmail, questions, responses, content) {
+  const studentResponses = responses.filter(r => r.studentId === studentEmail);
+  const score = studentResponses.filter(r => {
+    const q = questions.find(q => q.id === r.questionId);
+    return q && r.answer === q.correctAnswer;
+  }).length;
+  const total = questions.length;
+  const missed = questions.filter(q => {
+    const r = studentResponses.find(r => r.questionId === q.id);
+    return !r || r.answer !== q.correctAnswer;
+  }).map(q => q.text);
+
+  return callGemini(
+    `A Year 5/6 student just completed a live class quiz.\nLesson topic: "${content.substring(0,300)}"\nScore: ${score}/${total}\nQuestions they got wrong: ${missed.join('; ')||'None'}\n\nGive a short personalised message (3-4 sentences) that:\n1. Acknowledges their score positively\n2. Identifies their specific gap if any\n3. Gives ONE specific next step (e.g. watch a video, try a practice)\nBritish English. Encouraging tone. Address them as "you".`
+  );
+}
+
+// ═══════════════════════════════════════
+// STUDENT LIVE SESSION (upgraded)
+// ═══════════════════════════════════════
 function StudentLive({student,onExit}) {
-  const [session,setSession]=useState(null);
-  const [answered,setAnswered]=useState({});
-  const [loading,setLoading]=useState(true);
+  const [session,setSession] = useState(null);
+  const [answered,setAnswered] = useState({});
+  const [loading,setLoading] = useState(true);
+  const [personalFeedback,setPersonalFeedback] = useState('');
+  const [loadingFeedback,setLoadingFeedback] = useState(false);
+  const [currentSlide,setCurrentSlide] = useState(0);
 
   useEffect(()=>{
-    const poll=async()=>{try{const r=await api.getLiveSession();if(r?.session)setSession(r.session);}catch{}};
-    poll();const iv=setInterval(poll,5000);setLoading(false);return()=>clearInterval(iv);
+    const poll = async () => {
+      try {
+        const r = await api.getLiveSession();
+        if (r?.session) setSession(r.session);
+      } catch {}
+    };
+    poll();
+    const iv = setInterval(poll, 4000);
+    setLoading(false);
+    return () => clearInterval(iv);
   },[]);
 
-  const answer=async(qId,ans)=>{
-    setAnswered(p=>({...p,[qId]:ans}));
+  const answer = async(qId, ans) => {
+    setAnswered(p => ({...p,[qId]:ans}));
     if (session) {
-      const s={...session,studentResponses:[...(session.studentResponses||[]),{studentId:student.email,questionId:qId,answer:ans}]};
-      setSession(s);try{await api.updateLiveSession(s);}catch{}
+      const s = {...session, studentResponses:[...(session.studentResponses||[]),{studentId:student.email,questionId:qId,answer:ans}]};
+      setSession(s);
+      try { await api.updateLiveSession(s); } catch {}
     }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-96"><div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-[#002046]"></div></div>;
+  const loadPersonalFeedback = async () => {
+    if (!session) return;
+    setLoadingFeedback(true);
+    const fb = await getStudentPersonalFeedback(student.email, session.questions||[], session.studentResponses||[], session.content||'');
+    setPersonalFeedback(fb||'Great effort today! Keep practising to strengthen your understanding.');
+    setLoadingFeedback(false);
+  };
+
+  // Parse slides from content (split by newlines into chunks)
+  const slides = useMemo(() => {
+    if (!session?.content) return [];
+    const lines = session.content.split('\n').filter(l => l.trim());
+    const chunks = [];
+    let current = [];
+    lines.forEach(line => {
+      current.push(line);
+      if (current.length >= 4 || line.endsWith('.') && current.length >= 2) {
+        chunks.push(current.join('\n'));
+        current = [];
+      }
+    });
+    if (current.length) chunks.push(current.join('\n'));
+    return chunks.length ? chunks : [session.content];
+  },[session?.content]);
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-96">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-[#002046]"></div>
+    </div>
+  );
+
   if (!session?.isActive) return (
     <div className="flex flex-col items-center justify-center h-96 text-center p-6">
       <span className="text-6xl mb-4 animate-pulse">📡</span>
       <h2 className="text-2xl font-bold text-[#002046] mb-2 font-serif">Waiting for your teacher...</h2>
-      <p className="text-slate-500 mb-6">Stay on this page — your teacher will start shortly.</p>
-      <button onClick={onExit} className="text-sm text-slate-400 underline">Leave session</button>
+      <p className="text-slate-500 mb-2">Stay on this page — your teacher will start the session shortly.</p>
+      <p className="text-xs text-slate-400 mb-6">This page updates automatically every 4 seconds.</p>
+      <button onClick={onExit} className="text-sm text-slate-400 underline hover:text-slate-600">Leave session</button>
     </div>
   );
 
-  if (session.currentStage==='CONTENT_VIEW') return (
-    <div className="max-w-3xl mx-auto p-6"><div className="bg-white rounded-2xl shadow border border-slate-200 p-8"><div className="flex items-center mb-4"><span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span><span className="text-xs font-bold text-red-600 uppercase">Live — Reading Time</span></div><h2 className="text-2xl font-bold text-[#002046] mb-4 font-serif">Lesson Content</h2><p className="text-slate-700 leading-relaxed whitespace-pre-line">{session.content}</p><p className="text-sm text-slate-400 mt-6 italic">Read carefully — questions will follow!</p></div></div>
-  );
+  // CONTENT VIEW — show slides
+  if (session.currentStage==='CONTENT_VIEW') {
+    const slide = slides[currentSlide] || session.content;
+    return (
+      <div className="max-w-3xl mx-auto p-4">
+        <div className="flex items-center mb-4">
+          <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span>
+          <span className="text-xs font-bold text-red-600 uppercase tracking-wider">📡 Live Lesson — Reading Time</span>
+        </div>
 
-  const unanswered=session.questions?.filter(q=>!answered[q.id])||[];
-  const currentQ=unanswered[0];
-  const allDone=session.questions?.length>0&&unanswered.length===0;
-  const score=Object.keys(answered).filter(qId=>{const q=session.questions?.find(x=>x.id===qId);return q&&answered[qId]===q.correctAnswer;}).length;
+        {/* Slide card */}
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden mb-4">
+          <div className="bg-[#002046] px-6 py-3 flex items-center justify-between">
+            <span className="text-[#C5A059] text-xs font-bold uppercase tracking-wider">Slide {currentSlide+1} of {slides.length}</span>
+            <span className="text-white text-xs opacity-60">NLCS Jeju · Curiosity Drive</span>
+          </div>
+          <div className="p-8 min-h-48 flex items-center">
+            <p className="text-slate-800 text-lg leading-relaxed whitespace-pre-line font-medium">{slide}</p>
+          </div>
+        </div>
 
-  if (session.currentStage==='QUIZ'&&currentQ) return (
-    <div className="max-w-2xl mx-auto p-6">
-      <div className="flex items-center mb-4"><span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span><span className="text-xs font-bold text-red-600 uppercase">Live Quiz</span></div>
-      <div className="bg-white rounded-2xl shadow border border-slate-200 p-8">
-        <p className="text-xs text-slate-400 mb-2 font-bold">Question {Object.keys(answered).length+1} of {session.questions.length}</p>
-        <h2 className="text-xl font-bold text-slate-800 mb-6">{currentQ.text}</h2>
-        <div className="space-y-3">{currentQ.options?.map((opt,i)=><button key={i} onClick={()=>answer(currentQ.id,opt)} className="w-full text-left p-4 rounded-xl border-2 border-slate-200 hover:border-[#002046] hover:bg-blue-50 font-medium transition-all"><span className="font-bold mr-2">{String.fromCharCode(65+i)}.</span>{opt}</button>)}</div>
+        {/* Slide navigation */}
+        {slides.length > 1 && (
+          <div className="flex justify-between items-center mb-4">
+            <button onClick={()=>setCurrentSlide(Math.max(0,currentSlide-1))} disabled={currentSlide===0} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm disabled:opacity-30 hover:bg-slate-50">← Previous</button>
+            <div className="flex gap-1">{slides.map((_,i)=><div key={i} className={`w-2 h-2 rounded-full ${i===currentSlide?'bg-[#002046]':'bg-slate-200'}`}></div>)}</div>
+            <button onClick={()=>setCurrentSlide(Math.min(slides.length-1,currentSlide+1))} disabled={currentSlide===slides.length-1} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm disabled:opacity-30 hover:bg-slate-50">Next →</button>
+          </div>
+        )}
+
+        <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
+          <p className="text-blue-700 text-sm font-medium">📝 Read carefully and take notes. Questions will follow when your teacher starts the quiz!</p>
+        </div>
+      </div>
+    );
+  }
+
+  // QUIZ VIEW
+  const unanswered = (session.questions||[]).filter(q => !answered[q.id]);
+  const currentQ = unanswered[0];
+  const allDone = (session.questions||[]).length > 0 && unanswered.length === 0;
+  const score = Object.keys(answered).filter(qId => {
+    const q = (session.questions||[]).find(x => x.id===qId);
+    return q && answered[qId]===q.correctAnswer;
+  }).length;
+
+  if (session.currentStage==='QUIZ' && currentQ) return (
+    <div className="max-w-2xl mx-auto p-4">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center">
+          <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span>
+          <span className="text-xs font-bold text-red-600 uppercase">Live Quiz</span>
+        </div>
+        <span className="text-xs text-slate-500 font-bold">Question {Object.keys(answered).length+1} of {session.questions.length}</span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-full bg-slate-100 rounded-full h-2 mb-5">
+        <div className="bg-[#002046] h-2 rounded-full transition-all" style={{width:`${Math.round(Object.keys(answered).length/session.questions.length*100)}%`}}></div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow border border-slate-200 p-6 mb-4">
+        <h2 className="text-xl font-bold text-slate-800 mb-5 leading-relaxed">{currentQ.text}</h2>
+        <div className="space-y-3">
+          {currentQ.options?.map((opt,i) => (
+            <button key={i} onClick={()=>answer(currentQ.id,opt)} className="w-full text-left p-4 rounded-xl border-2 border-slate-200 hover:border-[#002046] hover:bg-blue-50 font-medium transition-all group">
+              <span className="inline-flex w-7 h-7 rounded-full bg-slate-100 group-hover:bg-[#002046] group-hover:text-white items-center justify-center font-bold text-sm mr-3 transition-colors">{String.fromCharCode(65+i)}</span>
+              {opt}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
 
-  if (allDone||session.currentStage==='ENDED') return (
-    <div className="max-w-lg mx-auto p-6 text-center"><div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-10">
-      <span className="text-6xl block mb-4">{score===session.questions?.length?'🏆':score>session.questions?.length/2?'👏':'💪'}</span>
-      <h2 className="text-2xl font-bold text-[#002046] mb-2 font-serif">Session Complete!</h2>
-      <p className="text-slate-600 mb-4">You got <strong>{score}</strong> out of <strong>{session.questions?.length}</strong> correct.</p>
-      <div className="w-full bg-slate-100 rounded-full h-4 mb-6"><div className="bg-[#002046] h-4 rounded-full" style={{width:`${session.questions?.length?Math.round(score/session.questions.length*100):0}%`}}></div></div>
-      <button onClick={onExit} className="bg-[#002046] text-[#C5A059] font-bold px-8 py-3 rounded-xl hover:bg-[#002d5c]">Back to Dashboard</button>
-    </div></div>
+  // WAITING
+  if (session.currentStage==='WAITING') return (
+    <div className="flex flex-col items-center justify-center h-96 text-center p-6">
+      <span className="text-5xl mb-4">⏸️</span>
+      <h2 className="text-xl font-bold text-[#002046] mb-2 font-serif">Paused</h2>
+      <p className="text-slate-500">Your teacher has paused the session. Stay on this page!</p>
+    </div>
   );
 
-  return <div className="flex items-center justify-center h-96"><div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-[#002046]"></div></div>;
+  // ENDED / ALL DONE
+  if (allDone || session.currentStage==='ENDED') return (
+    <div className="max-w-lg mx-auto p-4">
+      <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8 text-center mb-4">
+        <span className="text-6xl block mb-4">{score===session.questions?.length?'🏆':score>=(session.questions?.length/2)?'👏':'💪'}</span>
+        <h2 className="text-2xl font-bold text-[#002046] mb-2 font-serif">Session Complete!</h2>
+        <p className="text-slate-600 mb-2">You scored <strong>{score}</strong> out of <strong>{session.questions?.length}</strong></p>
+        <div className="w-full bg-slate-100 rounded-full h-4 mb-4">
+          <div className={`h-4 rounded-full transition-all ${score===session.questions?.length?'bg-emerald-500':score>=(session.questions?.length/2)?'bg-[#002046]':'bg-amber-500'}`}
+            style={{width:`${session.questions?.length?Math.round(score/session.questions.length*100):0}%`}}></div>
+        </div>
+        <p className="text-sm font-bold text-slate-500">{Math.round(score/(session.questions?.length||1)*100)}%</p>
+      </div>
+
+      {/* Personal AI Feedback */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-4">
+        <h3 className="font-bold text-[#002046] mb-3 font-serif">🎯 Your Personal Feedback</h3>
+        {personalFeedback ? (
+          <p className="text-slate-700 text-sm leading-relaxed">{personalFeedback}</p>
+        ) : (
+          <button onClick={loadPersonalFeedback} disabled={loadingFeedback} className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold py-3 rounded-xl text-sm transition-colors disabled:opacity-50">
+            {loadingFeedback ? '✨ Generating your personal feedback...' : '✨ Get My Personal AI Feedback'}
+          </button>
+        )}
+      </div>
+
+      {/* Next steps based on score */}
+      <div className={`rounded-2xl p-4 mb-4 border ${score===session.questions?.length?'bg-emerald-50 border-emerald-200':score>=(session.questions?.length/2)?'bg-blue-50 border-blue-200':'bg-amber-50 border-amber-200'}`}>
+        <h3 className="font-bold mb-2 text-sm">{score===session.questions?.length?'🌟 Outstanding! What\'s next?':score>=(session.questions?.length/2)?'📈 Good effort! Keep going:':'📚 Let\'s strengthen this topic:'}</h3>
+        {score===session.questions?.length && <p className="text-sm">You mastered this lesson! Try a challenge quiz on this topic to push even further.</p>}
+        {score>=(session.questions?.length/2) && score<session.questions?.length && <p className="text-sm">You understood most of the lesson. Review the questions you missed and try the textbook chapter for more detail.</p>}
+        {score<(session.questions?.length/2) && <p className="text-sm">That's okay — everyone learns at their own pace. Read through the lesson content again and try the Digital Textbook for this topic.</p>}
+      </div>
+
+      <button onClick={onExit} className="w-full bg-[#002046] text-[#C5A059] font-bold py-3 rounded-xl hover:bg-[#002d5c]">Back to Dashboard</button>
+    </div>
+  );
+
+  return (
+    <div className="flex items-center justify-center h-96">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-[#002046]"></div>
+    </div>
+  );
 }
 
 // ═══════════════════════════════════════
-// LIVE SESSION MANAGER (TEACHER)
+// LIVE SESSION MANAGER (TEACHER — upgraded)
 // ═══════════════════════════════════════
 function LiveSessionManager({teacher,onExit}) {
-  const [stage,setStage]=useState('UPLOAD');
-  const [content,setContent]=useState('');
-  const [loading,setLoading]=useState(false);
-  const [session,setSession]=useState(null);
-  const [qIdx,setQIdx]=useState(0);
-  const [analysis,setAnalysis]=useState(null);
-  const [showDrive,setShowDrive]=useState(false);
+  const [stage,setStage] = useState('UPLOAD');
+  const [content,setContent] = useState('');
+  const [fileName,setFileName] = useState('');
+  const [loading,setLoading] = useState(false);
+  const [session,setSession] = useState(null);
+  const [qIdx,setQIdx] = useState(0);
+  const [analysis,setAnalysis] = useState(null);
+  const [showDrive,setShowDrive] = useState(false);
+  const [dragOver,setDragOver] = useState(false);
+  const [extracting,setExtracting] = useState(false);
+  const fileRef = React.useRef(null);
 
-  const generate=async()=>{
-    if(!content.trim())return;setLoading(true);
-    const qs=await AI.liveQuestions(content);
-    if(qs.length>0){const s={isActive:true,content,questions:qs,currentStage:'CONTENT_VIEW',studentResponses:[]};await api.updateLiveSession(s);setSession(s);setStage('POLL');}
-    else alert('Could not generate questions. Please add more content.');
+  // Extract text from uploaded file
+  const extractText = async(file) => {
+    setExtracting(true);
+    setFileName(file.name);
+    try {
+      if (file.type === 'text/plain') {
+        const text = await file.text();
+        setContent(text);
+      } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        // For PDF: read as text best-effort
+        const text = await file.text().catch(() => '');
+        if (text.trim()) { setContent(text); }
+        else { setContent(`[PDF: ${file.name}]\n\nCould not extract text automatically from this PDF. Please paste the key content from your slides below, or use the text box to summarise the lesson content.`); }
+      } else if (file.name.endsWith('.pptx') || file.name.endsWith('.ppt')) {
+        // For PPTX: extract XML text content
+        const buffer = await file.arrayBuffer();
+        const extracted = await extractPPTX(buffer, file.name);
+        setContent(extracted);
+      } else {
+        // Fallback: try reading as text
+        const text = await file.text().catch(()=>'');
+        setContent(text || `File: ${file.name}\n\nPlease paste the key content from your slides in the text box below.`);
+      }
+    } catch(e) {
+      setContent(`File: ${file.name}\n\nCould not read this file automatically. Please paste your slide content in the text box below.`);
+    }
+    setExtracting(false);
+  };
+
+  // Extract text from PPTX file (reads XML inside zip)
+  const extractPPTX = async(buffer, name) => {
+    try {
+      // PPTX files are ZIP archives — we look for slide XML files
+      const uint8 = new Uint8Array(buffer);
+      const decoder = new TextDecoder('utf-8', {fatal:false});
+      const raw = decoder.decode(uint8);
+
+      // Extract text from XML tags
+      const textMatches = raw.match(/<a:t[^>]*>([^<]+)<\/a:t>/g) || [];
+      const texts = textMatches
+        .map(m => m.replace(/<[^>]+>/g,'').trim())
+        .filter(t => t.length > 2 && !t.startsWith('<?'));
+
+      if (texts.length > 0) {
+        return `[From: ${name}]\n\n` + texts.join('\n');
+      }
+      return `[File: ${name}]\n\nCould not extract slide text. Please paste your lesson content below.`;
+    } catch(e) {
+      return `[File: ${name}]\n\nPlease paste your lesson content below.`;
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault(); setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) extractText(file);
+  };
+
+  const handleFileInput = (e) => {
+    const file = e.target.files[0];
+    if (file) extractText(file);
+  };
+
+  const generate = async() => {
+    if (!content.trim()) return;
+    setLoading(true);
+    const qs = await AI.liveQuestions(content);
+    if (qs.length > 0) {
+      const s = {isActive:true,content,questions:qs,currentStage:'CONTENT_VIEW',studentResponses:[]};
+      await api.updateLiveSession(s);
+      setSession(s);
+      setStage('POLL');
+    } else {
+      alert('Could not generate questions. Please add more content to your lesson.');
+    }
     setLoading(false);
   };
 
-  const update=async(patch)=>{const s={...(session||{}), ...patch};setSession(s);try{await api.updateLiveSession(s);}catch{}};
-
-  const analyze=async()=>{
-    setLoading(true);
-    const stats=(session?.questions||[]).map(q=>({qId:q.id,correct:(session.studentResponses||[]).filter(r=>r.questionId===q.id&&r.answer===q.correctAnswer).length,total:(session.studentResponses||[]).filter(r=>r.questionId===q.id).length}));
-    const res=await AI.liveAnalysis(session?.questions||[],stats);
-    setAnalysis(res);setStage('ANALYSIS');setLoading(false);
+  const update = async(patch) => {
+    const s = {...(session||{}), ...patch};
+    setSession(s);
+    try { await api.updateLiveSession(s); } catch {}
   };
 
-  const results=()=>(session?.questions?.[qIdx]?.options||[]).map(opt=>({option:opt,count:(session.studentResponses||[]).filter(r=>r.questionId===session.questions[qIdx]?.id&&r.answer===opt).length}));
+  const analyze = async() => {
+    setLoading(true);
+    const stats = (session?.questions||[]).map(q => ({
+      question: q.text,
+      correctAnswer: q.correctAnswer,
+      correct: (session.studentResponses||[]).filter(r=>r.questionId===q.id&&r.answer===q.correctAnswer).length,
+      total: (session.studentResponses||[]).filter(r=>r.questionId===q.id).length,
+      responses: q.options?.map(opt=>({option:opt,count:(session.studentResponses||[]).filter(r=>r.questionId===q.id&&r.answer===opt).length}))
+    }));
+    const res = await AI.liveAnalysis(session?.questions||[], stats);
+    setAnalysis(res);
+    setStage('ANALYSIS');
+    setLoading(false);
+  };
 
+  const results = () => (session?.questions?.[qIdx]?.options||[]).map(opt=>({
+    option:opt,
+    count:(session.studentResponses||[]).filter(r=>r.questionId===session.questions[qIdx]?.id&&r.answer===opt).length
+  }));
+
+  const totalResponses = session ? (session.studentResponses||[]).filter((r,i,a)=>a.findIndex(x=>x.studentId===r.studentId)===i).length : 0;
+
+  // ── UPLOAD STAGE ──
   if (stage==='UPLOAD') return (
-    <div className="max-w-3xl mx-auto p-6">
+    <div className="max-w-3xl mx-auto p-4">
       <div className="flex items-center justify-between mb-6">
-        <button onClick={onExit} className="text-slate-500 hover:text-slate-800 flex items-center font-semibold text-sm"><svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg>Back</button>
-        <h2 className="text-2xl font-bold text-[#002046] font-serif">📡 Live Session</h2><div/>
+        <button onClick={onExit} className="text-slate-500 hover:text-slate-800 flex items-center font-semibold text-sm">
+          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg>Back
+        </button>
+        <h2 className="text-2xl font-bold text-[#002046] font-serif">📡 Live Session</h2>
+        <div/>
       </div>
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
-        <h3 className="font-bold text-slate-800 mb-2">Paste Your Lesson Content</h3>
-        <p className="text-sm text-slate-500 mb-4">Paste notes from your lesson or select a file below. AI will generate quiz questions for your class.</p>
-        <button onClick={()=>setShowDrive(true)} className="mb-3 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-bold flex items-center gap-1">📁 Select from Drive (Demo Files)</button>
-        <textarea value={content} onChange={e=>setContent(e.target.value)} className="w-full p-4 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-[#002046] min-h-48 text-sm font-mono resize-none" placeholder="Paste your lesson notes, slide content, or topic summary here..."/>
-        <button onClick={generate} disabled={!content.trim()||loading} className="mt-4 w-full bg-[#002046] text-[#C5A059] font-bold py-3 rounded-xl hover:bg-[#002d5c] disabled:opacity-40">{loading?'Generating quiz questions...':'Generate Live Quiz →'}</button>
-      </div>
-      {showDrive&&(
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
-            <h3 className="font-bold text-[#002046] mb-4 font-serif">📁 Demo Drive Files</h3>
-            <p className="text-xs text-slate-500 mb-4">Select a file to load its content into the session:</p>
-            {MOCK_DRIVE_FILES.map(f=>(
-              <button key={f.id} onClick={()=>{setContent(f.content);setShowDrive(false);}} className="w-full text-left p-3 mb-2 rounded-xl border border-slate-200 hover:border-[#002046] hover:bg-blue-50 transition-colors">
-                <div className="flex items-center gap-2"><span>{f.type==='presentation'?'📊':f.type==='document'?'📄':'📑'}</span><div><p className="font-bold text-sm text-slate-800">{f.name}</p><p className="text-xs text-slate-400">{f.updatedAt}</p></div></div>
-              </button>
-            ))}
-            <button onClick={()=>setShowDrive(false)} className="w-full mt-2 py-2 text-slate-500 border border-slate-200 rounded-xl text-sm hover:bg-slate-50">Cancel</button>
-          </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 mb-4">
+        <h3 className="font-bold text-slate-800 mb-1">Step 1 — Load Your Lesson Content</h3>
+        <p className="text-sm text-slate-500 mb-4">Upload a PowerPoint, PDF or text file — or paste your lesson notes directly.</p>
+
+        {/* Drag & Drop Zone */}
+        <div
+          onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+          onDragLeave={()=>setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={()=>fileRef.current?.click()}
+          className={`relative border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all mb-4 ${dragOver?'border-[#002046] bg-blue-50':'border-slate-300 hover:border-[#002046] hover:bg-slate-50'}`}
+        >
+          <input ref={fileRef} type="file" accept=".pptx,.ppt,.pdf,.txt,.docx" onChange={handleFileInput} className="hidden"/>
+          {extracting ? (
+            <div className="flex flex-col items-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-t-4 border-b-4 border-[#002046] mb-3"></div>
+              <p className="font-bold text-[#002046]">Extracting content from {fileName}...</p>
+            </div>
+          ) : fileName && content ? (
+            <div className="flex flex-col items-center">
+              <span className="text-4xl mb-2">✅</span>
+              <p className="font-bold text-emerald-700">{fileName} loaded!</p>
+              <p className="text-xs text-slate-400 mt-1">Click to replace with a different file</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center">
+              <span className="text-5xl mb-3">📂</span>
+              <p className="font-bold text-slate-700 mb-1">Drag & drop your file here</p>
+              <p className="text-sm text-slate-500 mb-3">Supports .pptx, .pdf, .txt files</p>
+              <span className="bg-[#002046] text-white text-xs font-bold px-4 py-2 rounded-xl">Browse Files</span>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* OR demo files */}
+        <div className="flex items-center gap-3 mb-4">
+          <div className="flex-1 h-px bg-slate-200"></div>
+          <span className="text-xs text-slate-400 font-bold">OR USE A DEMO FILE</span>
+          <div className="flex-1 h-px bg-slate-200"></div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {MOCK_DRIVE_FILES.map(f=>(
+            <button key={f.id} onClick={()=>{setContent(f.content);setFileName(f.name);}} className={`text-left p-3 rounded-xl border transition-colors ${content===f.content?'border-[#002046] bg-blue-50':'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-lg">{f.type==='presentation'?'📊':f.type==='document'?'📄':'📑'}</span>
+                <div><p className="font-bold text-xs text-slate-800 line-clamp-1">{f.name}</p><p className="text-[10px] text-slate-400">{f.updatedAt}</p></div>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Text area — shows extracted or manually typed content */}
+        <div className="mb-4">
+          <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Lesson Content {fileName&&`(from ${fileName})`}</label>
+          <textarea value={content} onChange={e=>setContent(e.target.value)} className="w-full p-4 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-[#002046] min-h-36 text-sm font-mono resize-none" placeholder="Lesson content will appear here after upload, or type/paste directly..."/>
+        </div>
+
+        <button onClick={generate} disabled={!content.trim()||loading} className="w-full bg-[#002046] text-[#C5A059] font-bold py-3.5 rounded-xl hover:bg-[#002d5c] disabled:opacity-40 transition-colors text-sm">
+          {loading?'🤖 AI is generating quiz questions...':'Step 2 — Generate Live Quiz →'}
+        </button>
+      </div>
     </div>
   );
 
+  // ── POLL STAGE ──
   if (stage==='POLL') return (
-    <div className="max-w-3xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center"><span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span><span className="text-xs font-bold text-red-600 uppercase">Live Session Active</span></div>
-        <button onClick={analyze} disabled={loading} className="bg-[#C5A059] text-[#002046] font-bold px-5 py-2 rounded-xl text-sm hover:bg-[#b08d4b] disabled:opacity-50">{loading?'Analysing...':'End & Analyse'}</button>
+    <div className="max-w-4xl mx-auto p-4">
+      {/* Top bar */}
+      <div className="flex items-center justify-between mb-4 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center"><span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span><span className="text-xs font-bold text-red-600 uppercase">Live Session Active</span></div>
+          <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-full font-bold">👥 {totalResponses} students responded</span>
+        </div>
+        <button onClick={analyze} disabled={loading} className="bg-[#C5A059] text-[#002046] font-bold px-5 py-2 rounded-xl text-sm hover:bg-[#b08d4b] disabled:opacity-50">
+          {loading?'Analysing...':'End & Analyse Results'}
+        </button>
       </div>
+
+      {/* Stage controls */}
       <div className="grid grid-cols-3 gap-2 mb-4">
-        {[{label:'📖 Share Content',s:'CONTENT_VIEW',color:'blue'},{label:'▶ Start Quiz',s:'QUIZ',color:'green'},{label:'⏸ Pause',s:'WAITING',color:'slate'}].map(({label,s,color})=>(
-          <button key={s} onClick={()=>update({currentStage:s})} className={`py-2 rounded-xl text-xs font-bold border-2 transition-colors ${session?.currentStage===s?`bg-${color}-600 text-white border-${color}-600`:'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>{label}</button>
+        {[{label:'📖 Show Content',s:'CONTENT_VIEW',desc:'Students read lesson'},{label:'▶ Start Quiz',s:'QUIZ',desc:'Students answer questions'},{label:'⏸ Pause',s:'WAITING',desc:'Pause everything'}].map(({label,s,desc})=>(
+          <button key={s} onClick={()=>update({currentStage:s})} className={`py-3 px-2 rounded-xl text-xs font-bold border-2 transition-colors ${session?.currentStage===s?'bg-[#002046] text-white border-[#002046]':'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+            <span className="block">{label}</span>
+            <span className={`text-[10px] font-normal ${session?.currentStage===s?'text-blue-200':'text-slate-400'}`}>{desc}</span>
+          </button>
         ))}
       </div>
-      {(session?.questions||[]).length>0&&(
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-          <div className="flex gap-2 mb-4 flex-wrap">{(session.questions||[]).map((_,i)=><button key={i} onClick={()=>setQIdx(i)} className={`px-3 py-1 rounded-full text-xs font-bold ${qIdx===i?'bg-[#002046] text-white':'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Q{i+1}</button>)}</div>
-          <p className="font-bold text-slate-800 mb-4 text-sm">{session.questions[qIdx]?.text}</p>
-          <SimpleBarChart data={results()} labelKey="option" valueKey="count"/>
-          <p className="text-xs text-slate-400 mt-3">✅ Correct answer: <strong>{session.questions[qIdx]?.correctAnswer}</strong> · Responses: {(session.studentResponses||[]).filter(r=>r.questionId===session.questions[qIdx]?.id).length}</p>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Content preview */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+          <h3 className="font-bold text-[#002046] mb-3 text-sm">📄 Lesson Content Preview</h3>
+          <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-600 max-h-32 overflow-y-auto font-mono leading-relaxed">{content.substring(0,400)}{content.length>400?'...':''}</div>
         </div>
-      )}
+
+        {/* Live results */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+          <h3 className="font-bold text-[#002046] mb-3 text-sm">📊 Live Results</h3>
+          {(session?.questions||[]).length > 0 ? (
+            <>
+              <div className="flex gap-1 mb-3 flex-wrap">
+                {(session.questions||[]).map((_,i)=>(
+                  <button key={i} onClick={()=>setQIdx(i)} className={`px-3 py-1 rounded-full text-xs font-bold ${qIdx===i?'bg-[#002046] text-white':'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Q{i+1}</button>
+                ))}
+              </div>
+              <p className="text-xs font-bold text-slate-700 mb-3 line-clamp-2">{session.questions[qIdx]?.text}</p>
+              <SimpleBarChart data={results()} labelKey="option" valueKey="count"/>
+              <p className="text-xs text-slate-400 mt-2">✅ Correct: <strong className="text-emerald-600">{session.questions[qIdx]?.correctAnswer}</strong></p>
+            </>
+          ) : <p className="text-xs text-slate-400">Questions will appear here once generated.</p>}
+        </div>
+      </div>
     </div>
   );
 
-  if (stage==='ANALYSIS'&&analysis) return (
-    <div className="max-w-3xl mx-auto p-6">
+  // ── ANALYSIS STAGE ──
+  if (stage==='ANALYSIS' && analysis) return (
+    <div className="max-w-3xl mx-auto p-4">
       <h2 className="text-2xl font-bold text-[#002046] mb-5 font-serif">📊 Session Analysis</h2>
-      <div className={`rounded-2xl p-5 mb-5 ${analysis.recommendation==='INDEPENDENT_STUDY'?'bg-green-50 border border-green-200':analysis.recommendation==='TEACHER_INTERVENTION'?'bg-red-50 border border-red-200':'bg-amber-50 border border-amber-200'}`}>
-        <h3 className="font-bold text-lg mb-2">{analysis.recommendation==='INDEPENDENT_STUDY'?'✅ They got it!':analysis.recommendation==='TEACHER_INTERVENTION'?'🔴 Re-teach Needed':'🟡 Split the Group'}</h3>
-        <p className="text-sm leading-relaxed">{analysis.summary}</p>
+
+      {/* Class recommendation */}
+      <div className={`rounded-2xl p-5 mb-5 ${analysis.recommendation==='INDEPENDENT_STUDY'?'bg-emerald-50 border border-emerald-200':analysis.recommendation==='TEACHER_INTERVENTION'?'bg-red-50 border border-red-200':'bg-amber-50 border border-amber-200'}`}>
+        <div className="flex items-start gap-3">
+          <span className="text-3xl">{analysis.recommendation==='INDEPENDENT_STUDY'?'✅':analysis.recommendation==='TEACHER_INTERVENTION'?'🔴':'🟡'}</span>
+          <div>
+            <h3 className="font-bold text-lg mb-1">{analysis.recommendation==='INDEPENDENT_STUDY'?'Class Ready to Move On':analysis.recommendation==='TEACHER_INTERVENTION'?'Re-teaching Needed':'Split the Group'}</h3>
+            <p className="text-sm leading-relaxed">{analysis.summary}</p>
+          </div>
+        </div>
       </div>
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 mb-5"><h3 className="font-bold text-[#002046] mb-3">Action Items</h3><ul className="space-y-2">{(analysis.actionItems||[]).map((item,i)=><li key={i} className="flex items-start text-sm"><span className="w-5 h-5 bg-[#002046] text-white rounded-full flex items-center justify-center text-[10px] font-bold mr-2 flex-shrink-0">{i+1}</span>{item}</li>)}</ul></div>
-      <button onClick={onExit} className="bg-[#002046] text-[#C5A059] font-bold px-8 py-3 rounded-xl hover:bg-[#002d5c]">Finish Session</button>
+
+      {/* Per-question breakdown */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 mb-5">
+        <h3 className="font-bold text-[#002046] mb-4">Question Breakdown</h3>
+        <div className="space-y-4">
+          {(session?.questions||[]).map((q,i)=>{
+            const correct=(session.studentResponses||[]).filter(r=>r.questionId===q.id&&r.answer===q.correctAnswer).length;
+            const total=(session.studentResponses||[]).filter(r=>r.questionId===q.id).length;
+            const pct=total?Math.round(correct/total*100):0;
+            return (
+              <div key={i} className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-xs font-bold text-slate-700 flex-1 mr-3">Q{i+1}: {q.text}</p>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded flex-shrink-0 ${pct>=70?'bg-emerald-100 text-emerald-700':pct>=40?'bg-amber-100 text-amber-700':'bg-red-100 text-red-700'}`}>{pct}% correct</span>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full h-2">
+                  <div className={`h-2 rounded-full ${pct>=70?'bg-emerald-500':pct>=40?'bg-amber-500':'bg-red-400'}`} style={{width:`${pct}%`}}></div>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">{correct}/{total} students · Answer: <strong>{q.correctAnswer}</strong></p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Action items */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 mb-5">
+        <h3 className="font-bold text-[#002046] mb-3">🎯 Recommended Next Steps</h3>
+        <div className="space-y-3">
+          {(analysis.actionItems||[]).map((item,i)=>(
+            <div key={i} className="flex items-start">
+              <span className="w-6 h-6 bg-[#002046] text-white rounded-full flex items-center justify-center text-xs font-bold mr-3 flex-shrink-0">{i+1}</span>
+              <p className="text-sm leading-relaxed">{item}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        <button onClick={()=>setStage('POLL')} className="flex-1 py-3 rounded-xl border-2 border-slate-300 text-slate-600 font-bold hover:bg-slate-50 text-sm">← Back to Session</button>
+        <button onClick={onExit} className="flex-1 bg-[#002046] text-[#C5A059] font-bold py-3 rounded-xl hover:bg-[#002d5c] text-sm">Finish Session ✓</button>
+      </div>
     </div>
   );
 
   return <div className="text-center p-8"><button onClick={onExit} className="text-blue-500 underline">Return to Dashboard</button></div>;
 }
 
-// ═══════════════════════════════════════
-// TEACHER DASHBOARD
-// ═══════════════════════════════════════
 function TeacherDashboard({teacher,onLaunchLive}) {
   const [students,setStudents]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -996,6 +1369,105 @@ function TeacherDashboard({teacher,onLaunchLive}) {
 }
 
 // ═══════════════════════════════════════
+// ═══════════════════════════════════════
+// FEEDBACK BUTTON
+// ═══════════════════════════════════════
+function FeedbackButton({student}) {
+  const [open,setOpen]=useState(false);
+  const [type,setType]=useState('bug');
+  const [msg,setMsg]=useState('');
+  const [page,setPage]=useState('');
+  const [sent,setSent]=useState(false);
+  const [sending,setSending]=useState(false);
+
+  const types=[{v:'bug',l:'🐛 Bug Report',d:'Something is broken or not working'},{v:'feature',l:'💡 Feature Idea',d:'Something you would like to see added'},{v:'content',l:'📚 Content Issue',d:'Wrong information or missing topic'},{v:'other',l:'💬 General Feedback',d:'Anything else'}];
+
+  const submit=async()=>{
+    if(!msg.trim())return;
+    setSending(true);
+    try {
+      await api.submitFeedback({
+        email:student?.email||'unknown',
+        name:student?.name||'unknown',
+        role:student?.role||'STUDENT',
+        type, message:msg, page,
+        userAgent:navigator.userAgent,
+        timestamp:new Date().toISOString()
+      });
+      setSent(true);
+    } catch(e) { alert('Could not submit. Please try again.'); }
+    setSending(false);
+  };
+
+  const reset=()=>{setOpen(false);setType('bug');setMsg('');setPage('');setSent(false);};
+
+  return (
+    <>
+      {/* Floating Button */}
+      <button onClick={()=>setOpen(true)} className="fixed bottom-6 right-6 z-50 bg-[#C5A059] text-[#002046] font-bold px-4 py-3 rounded-2xl shadow-xl hover:bg-[#b08d4b] hover:shadow-2xl transition-all flex items-center gap-2 text-sm border-2 border-[#002046]">
+        <span>💬</span><span className="hidden sm:inline">Feedback</span>
+      </button>
+
+      {/* Modal */}
+      {open&&(
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+            {/* Header */}
+            <div className="bg-[#002046] p-5 flex items-center justify-between">
+              <div><h3 className="font-bold text-white font-serif text-lg">Send Feedback</h3><p className="text-blue-300 text-xs">Help us improve Curiosity Drive</p></div>
+              <button onClick={reset} className="text-white/60 hover:text-white"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+
+            {sent ? (
+              <div className="p-8 text-center">
+                <span className="text-5xl block mb-4">🚀</span>
+                <h3 className="text-xl font-bold text-[#002046] mb-2 font-serif">Thank you!</h3>
+                <p className="text-slate-500 text-sm mb-5">Your feedback has been sent to the development team. We'll review it and work on improvements.</p>
+                <button onClick={reset} className="bg-[#002046] text-[#C5A059] font-bold px-8 py-3 rounded-xl hover:bg-[#002d5c]">Done</button>
+              </div>
+            ) : (
+              <div className="p-5">
+                {/* Type selector */}
+                <div className="mb-4">
+                  <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">What kind of feedback?</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {types.map(t=>(
+                      <button key={t.v} onClick={()=>setType(t.v)} className={`p-3 rounded-xl border-2 text-left transition-all ${type===t.v?'border-[#002046] bg-blue-50':'border-slate-200 hover:border-slate-300'}`}>
+                        <p className="font-bold text-sm text-slate-800">{t.l}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{t.d}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Page field */}
+                <div className="mb-4">
+                  <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">Where did this happen?</label>
+                  <input value={page} onChange={e=>setPage(e.target.value)} placeholder="e.g. Quiz, Textbook, Teacher Dashboard..." className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#002046]"/>
+                </div>
+
+                {/* Message */}
+                <div className="mb-5">
+                  <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wider">
+                    {type==='bug'?'Describe what went wrong:':type==='feature'?'Describe your idea:':type==='content'?'What was wrong or missing?':'Your feedback:'}
+                  </label>
+                  <textarea value={msg} onChange={e=>setMsg(e.target.value)} rows={4} placeholder={type==='bug'?'e.g. When I click Submit on the quiz, nothing happens...':type==='feature'?'e.g. It would be great if students could...':'Tell us more...'} className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#002046] resize-none"/>
+                </div>
+
+                <div className="flex gap-3">
+                  <button onClick={reset} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 text-sm">Cancel</button>
+                  <button onClick={submit} disabled={!msg.trim()||sending} className="flex-1 py-2.5 rounded-xl bg-[#002046] text-[#C5A059] font-bold hover:bg-[#002d5c] disabled:opacity-40 text-sm">{sending?'Sending...':'Send Feedback →'}</button>
+                </div>
+                <p className="text-xs text-slate-400 text-center mt-3">Sent from: {student?.name} ({student?.email})</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // MAIN APP
 // ═══════════════════════════════════════
 function App() {
@@ -1116,6 +1588,7 @@ function App() {
       </footer>
 
       {showAvatar&&<AvatarCreator initial={student.avatarConfig} onSave={saveAvatar} onCancel={()=>setShowAvatar(false)}/>}
+      <FeedbackButton student={student}/>
     </div>
   );
 }
