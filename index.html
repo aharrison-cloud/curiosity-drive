@@ -188,18 +188,76 @@ Use British English: colour, centre, practise, organise, recognise.`;
       {type:'OBJECT',properties:{isCorrect:{type:'BOOLEAN'},feedback:{type:'STRING'},grade:{type:'STRING'}}});
   },
   async insights(student) {
-    const d = await callGemini(`UK Y5/6 Science teacher analysis.\nStudent: ${student.name}, Grade: ${student.currentGrade}, Mastery: ${JSON.stringify(student.mastery)}, Help: ${student.helpUsageCount}.\nBritish English. Summary, 2 strengths, 2 weaknesses, 3 steps each with resourceType (VIDEO/ARTICLE/WORKSHEET), resourceTitle, resourceSearchTerm.`,
-      {type:'OBJECT',properties:{summary:{type:'STRING'},strengths:{type:'ARRAY',items:{type:'STRING'}},weaknesses:{type:'ARRAY',items:{type:'STRING'}},actionableSteps:{type:'ARRAY',items:{type:'OBJECT',properties:{step:{type:'STRING'},resourceType:{type:'STRING',enum:['VIDEO','ARTICLE','WORKSHEET']},resourceTitle:{type:'STRING'},resourceSearchTerm:{type:'STRING'}}}}}});
+    const prompt = `You are a UK Primary Science teacher analysing a student's performance.
+Student: ${student.name}, Current Grade: ${student.currentGrade}
+Mastery data (topic: {mode: score%}): ${JSON.stringify(student.mastery)}
+Help requests used: ${student.helpUsageCount}
+Use British English. Return ONLY valid JSON:
+{
+  "summary": "2-3 sentence overview of the student's performance",
+  "strengths": ["strength 1", "strength 2"],
+  "weaknesses": ["area to improve 1", "area to improve 2"],
+  "actionableSteps": [
+    {"step": "specific action", "resourceType": "VIDEO", "resourceTitle": "resource name", "resourceSearchTerm": "search query"},
+    {"step": "specific action", "resourceType": "WORKSHEET", "resourceTitle": "resource name", "resourceSearchTerm": "search query"},
+    {"step": "specific action", "resourceType": "ARTICLE", "resourceTitle": "resource name", "resourceSearchTerm": "search query"}
+  ]
+}`;
+    const d = await callGemini(prompt, {type:'OBJECT',properties:{summary:{type:'STRING'},strengths:{type:'ARRAY',items:{type:'STRING'}},weaknesses:{type:'ARRAY',items:{type:'STRING'}},actionableSteps:{type:'ARRAY',items:{type:'OBJECT',properties:{step:{type:'STRING'},resourceType:{type:'STRING'},resourceTitle:{type:'STRING'},resourceSearchTerm:{type:'STRING'}}}}}});
     return d?{studentId:student.email,...d}:null;
   },
   async challenges(student) {
     const strong = Object.entries(student.mastery||{}).filter(([_,m])=>Object.values(m).some(s=>s>80)).map(([id])=>TOPICS.find(t=>t.id===id)?.name).filter(Boolean);
-    return callGemini(`NLCS Jeju student strong in: ${strong.join(', ')||'all topics'}.\n3 suggestions: 1 project, 1 competition, 1 scholarship. For each: title, description, type (COMPETITION/PROJECT/SCHOLARSHIP), difficulty, reason, videoSearchTerm, articleSearchTerm, thoughtQuestions (2), researchQuestions (2). British English.`,
-      {type:'ARRAY',items:{type:'OBJECT',properties:{title:{type:'STRING'},description:{type:'STRING'},type:{type:'STRING',enum:['COMPETITION','PROJECT','SCHOLARSHIP']},difficulty:{type:'STRING'},reason:{type:'STRING'},videoSearchTerm:{type:'STRING'},articleSearchTerm:{type:'STRING'},thoughtQuestions:{type:'ARRAY',items:{type:'STRING'}},researchQuestions:{type:'ARRAY',items:{type:'STRING'}}}}}) || [];
+    const prompt = `An NLCS Jeju Junior School student is strong in: ${strong.join(', ')||'science generally'}.
+Suggest 3 enrichment opportunities. Return ONLY valid JSON array:
+[
+  {"title":"name","description":"what to do","type":"PROJECT","difficulty":"Medium","reason":"why it suits this student","videoSearchTerm":"YouTube search","articleSearchTerm":"Google search","thoughtQuestions":["question 1","question 2"],"researchQuestions":["find out 1","find out 2"]},
+  {"title":"name","description":"what to do","type":"COMPETITION","difficulty":"Hard","reason":"why","videoSearchTerm":"search","articleSearchTerm":"search","thoughtQuestions":["q1","q2"],"researchQuestions":["r1","r2"]},
+  {"title":"name","description":"what to do","type":"SCHOLARSHIP","difficulty":"Medium","reason":"why","videoSearchTerm":"search","articleSearchTerm":"search","thoughtQuestions":["q1","q2"],"researchQuestions":["r1","r2"]}
+]
+British English. Make suggestions real and specific to UK junior science.`;
+    return callGemini(prompt, {type:'ARRAY',items:{type:'OBJECT',properties:{title:{type:'STRING'},description:{type:'STRING'},type:{type:'STRING'},difficulty:{type:'STRING'},reason:{type:'STRING'},videoSearchTerm:{type:'STRING'},articleSearchTerm:{type:'STRING'},thoughtQuestions:{type:'ARRAY',items:{type:'STRING'}},researchQuestions:{type:'ARRAY',items:{type:'STRING'}}}}}) || [];
   },
   async textbook(topic) {
-    return callGemini(`Digital Textbook Chapter for UK National Curriculum Year ${topic.year} Science.\nTopic: ${topic.name}. Points: ${topic.curriculumPoints.join(', ')}.\nAudience: Year ${topic.year} (9-11 yrs). British English. Engaging tone.\nProvide: title, introduction, 3-4 sections (title+content), keyConcepts (array), summary.`,
-      {type:'OBJECT',properties:{title:{type:'STRING'},introduction:{type:'STRING'},sections:{type:'ARRAY',items:{type:'OBJECT',properties:{title:{type:'STRING'},content:{type:'STRING'}}}},keyConcepts:{type:'ARRAY',items:{type:'STRING'}},summary:{type:'STRING'}}});
+    const prompt = `You are writing a Digital Textbook Chapter for UK National Curriculum Year ${topic.year} Science.
+
+Topic: ${topic.name}
+Curriculum Points: ${topic.curriculumPoints.join('; ')}
+Key Vocabulary: ${topic.vocabulary.map(v => v.term + ': ' + v.definition).join('; ')}
+Audience: Year ${topic.year} students aged ${topic.year===5?'9-10':'10-11'} years old
+Tone: Engaging, encouraging, clear. Use British English (colour, centre, practise).
+
+Write a comprehensive chapter with these sections. Return ONLY valid JSON, no markdown:
+{
+  "title": "chapter title",
+  "introduction": "2-3 engaging sentences that hook the reader and introduce the topic",
+  "sections": [
+    {"title": "section heading", "content": "200-250 words of clear educational content with examples"},
+    {"title": "section heading", "content": "200-250 words"},
+    {"title": "section heading", "content": "200-250 words"}
+  ],
+  "keyConcepts": ["key point 1", "key point 2", "key point 3", "key point 4", "key point 5"],
+  "summary": "A single paragraph summarising the whole chapter"
+}
+
+Make the content rigorous and curriculum-aligned. Use real-world examples that Year ${topic.year} students can relate to.`;
+
+    const body = {
+      contents:[{parts:[{text:prompt}]}],
+      generationConfig:{responseMimeType:'application/json'}
+    };
+    try {
+      const res = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + CONFIG.GEMINI_API_KEY,
+        {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}
+      );
+      if (!res.ok) { console.error('Textbook API error:', res.status); return null; }
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (!text) { console.error('Textbook: empty response'); return null; }
+      const clean = text.replace(/^```json\s*/,'').replace(/\s*```$/,'').trim();
+      return JSON.parse(clean);
+    } catch(e) { console.error('Textbook error:', e); return null; }
   },
   async translate(text,lang) { return callGemini(`Translate this educational science text to ${lang} for a junior school student:\n"${text}"`); },
   async explain(concept) { return callGemini(`Explain "${concept}" to a 10-year-old in 2 sentences. British English.`); },
@@ -217,8 +275,16 @@ Return ONLY a JSON array, no other text.`;
       {type:'ARRAY',items:{type:'OBJECT',properties:{id:{type:'STRING'},text:{type:'STRING'},options:{type:'ARRAY',items:{type:'STRING'}},correctAnswer:{type:'STRING'}},required:['id','text','options','correctAnswer']}}) || [];
   },
   async liveAnalysis(questions,results) {
-    return callGemini(`Analyse class quiz results.\nQuestions: ${JSON.stringify(questions)}\nPerformance: ${JSON.stringify(results)}\nRecommend: INDEPENDENT_STUDY / TEACHER_INTERVENTION / SPLIT_GROUP.\nSummary + 3 action items. British English.`,
-      {type:'OBJECT',properties:{summary:{type:'STRING'},recommendation:{type:'STRING',enum:['INDEPENDENT_STUDY','TEACHER_INTERVENTION','SPLIT_GROUP']},actionItems:{type:'ARRAY',items:{type:'STRING'}}}});
+    const prompt = `Analyse this UK Primary School class quiz result.
+Questions and performance: ${JSON.stringify(results)}
+Decide which recommendation fits: INDEPENDENT_STUDY (most students understood), TEACHER_INTERVENTION (most struggled), SPLIT_GROUP (mixed results).
+British English. Return ONLY valid JSON:
+{
+  "summary": "2-3 sentences describing how the class performed",
+  "recommendation": "INDEPENDENT_STUDY or TEACHER_INTERVENTION or SPLIT_GROUP",
+  "actionItems": ["specific action 1", "specific action 2", "specific action 3"]
+}`;
+    return callGemini(prompt, {type:'OBJECT',properties:{summary:{type:'STRING'},recommendation:{type:'STRING',enum:['INDEPENDENT_STUDY','TEACHER_INTERVENTION','SPLIT_GROUP']},actionItems:{type:'ARRAY',items:{type:'STRING'}}}});
   }
 };
 
