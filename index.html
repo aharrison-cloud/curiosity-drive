@@ -181,7 +181,7 @@ For DATA_ANALYSIS: add a tableData field: {"headers":["col1","col2"],"rows":[["v
 Use British English: colour, centre, practise, organise, recognise.`;
 
     return callGeminiQuestion(prompt);
-  },,
+  },
   async evaluate(question,answer) {
     const ci = question.mode==='COMMUNICATION'?'Give feedback as "🧪 Science: [comment]. ✍️ Writing Tip: [advice]."':'';
     return callGemini(`Question: "${question.text}"\nRef: "${question.correctAnswer||question.explanation}"\nAnswer: "${answer}"\nMode: ${question.mode}\nEvaluate UK Y5/6 rubric (Emerging 3 to Exceeding 7). British English. ${ci}`,
