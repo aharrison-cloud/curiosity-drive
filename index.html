@@ -80,80 +80,115 @@ async function callGemini(prompt, schema=null) {
   try {
     const body = {contents:[{parts:[{text:prompt}]}]};
     if (schema) body.generationConfig = {responseMimeType:'application/json',responseSchema:schema};
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
-      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(()=>({}));
+      console.error('Gemini API error:', res.status, err?.error?.message);
+      return null;
+    }
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text||'';
-    if (schema) { try{return JSON.parse(text);}catch{return null;} }
+    if (!text) { console.error('Gemini returned empty response'); return null; }
+    if (schema) {
+      // Strip markdown code fences if present
+      const clean = text.replace(/^```json\s*/,'').replace(/\s*```$/,'').trim();
+      try { return JSON.parse(clean); } catch(e) { console.error('JSON parse failed:',e,'text:',clean.substring(0,200)); return null; }
+    }
     return text;
-  } catch(e) { console.error('Gemini error:',e); return null; }
+  } catch(e) { console.error('Gemini fetch error:',e); return null; }
+}
+
+// Question-only call — no schema to avoid Gemini schema bugs
+async function callGeminiQuestion(prompt) {
+  const key = CONFIG.GEMINI_API_KEY;
+  if (!key || key.startsWith('YOUR_')) return null;
+  try {
+    const body = {
+      contents:[{parts:[{text:prompt}]}],
+      generationConfig:{responseMimeType:'application/json'}
+    };
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+      {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
+    );
+    if (!res.ok) { const e=await res.json().catch(()=>({})); console.error('Gemini Q error:',res.status,e?.error?.message); return null; }
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text||'';
+    if (!text) return null;
+    const clean = text.replace(/^```json\s*/,'').replace(/\s*```$/,'').trim();
+    try { return JSON.parse(clean); } catch(e) { console.error('Q parse error:',e,'raw:',clean.substring(0,300)); return null; }
+  } catch(e) { console.error('Gemini Q fetch error:',e); return null; }
 }
 
 const AI = {
   async question(topic, mode, diff, previousQuestions=[]) {
-    const modeInstructions = {
-      CONTENT: `Generate a MULTIPLE_CHOICE question testing factual recall or conceptual understanding.
-- Ask about definitions, processes, examples, or cause-and-effect relationships.
-- All 4 options must be plausible but only one correct.
-- Example styles: "What is...?", "Which of these...?", "What happens when...?"`,
-      COMMUNICATION: `Generate an OPEN_TEXT question requiring the student to write 3-5 sentences explaining a scientific concept.
-- Must start with "Explain...", "Describe...", or "How does...".
-- Focus on scientific vocabulary and clear explanation.
-- Example: "Explain how the circulatory system transports oxygen around the body."`,
-      SCIENTIFIC: `Generate a MULTIPLE_CHOICE question about Working Scientifically skills:
-- Fair tests, variables (independent/dependent/control), reliability, predictions, conclusions.
-- Frame as a scenario: "A student is investigating... which variable should they change?"
-- All 4 options must be plausible.`,
-      DATA_ANALYSIS: `Generate a MULTIPLE_CHOICE question that requires interpreting a simple data table.
-- Create a realistic data table in the tableData field (3-4 columns, 4-5 rows of data).
-- Question must ask student to spot a pattern, trend, anomaly, or calculate a difference/mean.
-- Example: "Based on the table, which material was the best conductor?"`
-    }[mode] || '';
 
-    const prevList = previousQuestions.length > 0
-      ? `\n\nIMPORTANT: Do NOT repeat any of these previous questions:\n${previousQuestions.map((q,i) => `${i+1}. ${q}`).join('\n')}`
+    const modeGuide = {
+      CONTENT: `TYPE: MULTIPLE_CHOICE
+FOCUS: Test factual knowledge of the topic.
+Write a question about one of these curriculum points: ${topic.curriculumPoints.join(' | ')}
+Good question styles: "What is...?" / "Which of these is an example of...?" / "What happens when...?" / "Which statement is correct about...?"
+Make all 4 options plausible — students should have to think, not just guess.`,
+
+      COMMUNICATION: `TYPE: OPEN_TEXT (no options needed)
+FOCUS: Scientific writing and explanation.
+Write a question starting with "Explain...", "Describe how...", or "Why does..."
+The student must write 3-5 full sentences using scientific vocabulary.
+Target one of these curriculum points: ${topic.curriculumPoints.join(' | ')}`,
+
+      SCIENTIFIC: `TYPE: MULTIPLE_CHOICE
+FOCUS: Working Scientifically skills.
+Write a scenario-based question about: fair tests, variables (independent/dependent/control), predictions, conclusions, or reliability.
+Example format: "A student investigates [X]. Which variable should they keep the same to make it a fair test?"
+All 4 options must be plausible scientific answers.`,
+
+      DATA_ANALYSIS: `TYPE: MULTIPLE_CHOICE
+FOCUS: Interpreting data.
+Create a simple data table (tableData field) with 3-4 columns and 4-5 rows showing realistic scientific data.
+Write a question asking the student to: spot a pattern, identify an anomaly, calculate a difference, or draw a conclusion.
+Example: "Based on the table, which [X] was most effective?"`
+    }[mode] || 'TYPE: MULTIPLE_CHOICE
+FOCUS: Test understanding of the topic.';
+
+    const prevWarning = previousQuestions.length > 0
+      ? `
+
+You MUST write a COMPLETELY DIFFERENT question. Previous questions used:
+${previousQuestions.map((q,i)=>`${i+1}. ${q}`).join('
+')}`
       : '';
 
-    const prompt = `You are an experienced UK Primary School Science teacher creating assessment questions.
+    const prompt = `You are writing a science assessment question for UK Primary School Year ${topic.year} students (age ${topic.year===5?'9-10':'10-11'}).
 
-Topic: ${topic.name} (Year ${topic.year})
-UK National Curriculum Points: ${topic.curriculumPoints.join('; ')}
-Difficulty: ${diff} (${diff==='easy'?'recall and recognition':diff==='medium'?'understanding and application':'analysis and evaluation'})
-Key Vocabulary: ${topic.vocabulary.map(v=>v.term).join(', ')}
+TOPIC: ${topic.name}
+CURRICULUM POINTS: ${topic.curriculumPoints.join('; ')}
+KEY VOCABULARY: ${topic.vocabulary.map(v=>`${v.term} (${v.definition})`).join('; ')}
+DIFFICULTY: ${diff} — ${diff==='easy'?'simple recall, straightforward':diff==='medium'?'understanding and application':'analysis, evaluation, extension'}${prevWarning}
 
-Task: ${modeInstructions}
+TASK:
+${modeGuide}
 
-Requirements:
-- Use British English spelling (colour, centre, practise, recognise)
-- Match difficulty level precisely
-- Question must be NEW and DIFFERENT from previous ones${prevList}
-- For MULTIPLE_CHOICE: exactly 4 options, one correct, three plausible distractors
-- correctAnswer must be copied EXACTLY from one of the options
-- Include a helpful hint that guides without giving away the answer
-- Include a clear explanation of why the correct answer is right
-- Include a YouTube search term for a relevant KS2 science video
+OUTPUT FORMAT (JSON only, no markdown, no extra text):
+{
+  "type": "MULTIPLE_CHOICE" or "OPEN_TEXT",
+  "text": "the full question text",
+  "options": ["Option A", "Option B", "Option C", "Option D"],
+  "correctAnswer": "must match one option exactly",
+  "explanation": "why this is correct, what the science says",
+  "hint": "a helpful clue that guides without giving away the answer",
+  "videoSearchTerm": "KS2 science YouTube search query for this topic",
+  "difficulty": "${diff}"
+}
 
-Return ONLY valid JSON, no other text.`;
+For OPEN_TEXT: set options to [] and correctAnswer to a model answer.
+For DATA_ANALYSIS: add a tableData field: {"headers":["col1","col2"],"rows":[["val","val"]]}
+Use British English: colour, centre, practise, organise, recognise.`;
 
-    return callGemini(prompt, {
-      type:'OBJECT',
-      properties:{
-        type:{type:'STRING',enum:['MULTIPLE_CHOICE','OPEN_TEXT']},
-        text:{type:'STRING'},
-        options:{type:'ARRAY',items:{type:'STRING'}},
-        correctAnswer:{type:'STRING'},
-        explanation:{type:'STRING'},
-        hint:{type:'STRING'},
-        tableData:{type:'OBJECT',properties:{
-          headers:{type:'ARRAY',items:{type:'STRING'}},
-          rows:{type:'ARRAY',items:{type:'ARRAY',items:{type:'STRING'}}}
-        }},
-        videoSearchTerm:{type:'STRING'},
-        difficulty:{type:'STRING',enum:['easy','medium','hard']}
-      },
-      required:['type','text','explanation','hint','correctAnswer']
-    });
-  },
+    return callGeminiQuestion(prompt);
+  },,
   async evaluate(question,answer) {
     const ci = question.mode==='COMMUNICATION'?'Give feedback as "🧪 Science: [comment]. ✍️ Writing Tip: [advice]."':'';
     return callGemini(`Question: "${question.text}"\nRef: "${question.correctAnswer||question.explanation}"\nAnswer: "${answer}"\nMode: ${question.mode}\nEvaluate UK Y5/6 rubric (Emerging 3 to Exceeding 7). British English. ${ci}`,
@@ -412,21 +447,25 @@ function QuizModule({student,topic,mode,onExit,onComplete}) {
   useEffect(()=>{loadQ();},[]);
 
   const getFallback = (idx)=>{
-    // Rotate through vocabulary so fallback is never the same
+    // Rotate through well-formed curriculum questions as fallbacks
     const vocab = topic.vocabulary;
     const v = vocab[idx % vocab.length] || vocab[0];
-    const wrong = vocab.filter((_,i)=>i!==idx%vocab.length).map(x=>x.term);
-    // Pad wrong answers if needed
-    const fillers = ['None of the above','All of the above','It depends on conditions'];
-    while(wrong.length < 3) wrong.push(fillers[wrong.length]);
-    const opts = [v.term,...wrong.slice(0,3)].sort(()=>Math.random()-0.5);
+    const others = vocab.filter((_,i)=>i!==idx%vocab.length);
+    const wrongDefs = others.slice(0,3).map(x=>x.definition);
+    const fillerDefs = [
+      'A process that converts energy from one form to another',
+      'The movement of particles from high to low concentration',
+      'A force that acts in the opposite direction to motion'
+    ];
+    while(wrongDefs.length < 3) wrongDefs.push(fillerDefs[wrongDefs.length]);
+    const opts = [v.definition,...wrongDefs].sort(()=>Math.random()-0.5);
     return {
       type:'MULTIPLE_CHOICE',
-      text:`What is the definition of "${v.term}" in ${topic.name}?`,
+      text:`Which of the following correctly describes "${v.term}" in ${topic.name}?`,
       options:opts,
-      correctAnswer:v.term,
-      explanation:v.definition,
-      hint:`Think about what "${v.term}" means in the context of ${topic.name}.`,
+      correctAnswer:v.definition,
+      explanation:`${v.term}: ${v.definition} This is a key concept in ${topic.name} as part of the UK Year ${topic.year} Science curriculum.`,
+      hint:`Think about what the word "${v.term}" sounds like or relates to. It is a key term in ${topic.name}.`,
       difficulty:diff,
       videoSearchTerm:topic.videoSearchTerm
     };
