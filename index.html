@@ -44,7 +44,7 @@ const CONFIG = {
   ALLOWED_DOMAIN: 'nlcsjeju.kr',
 
   // From Apps Script → Deploy → Manage deployments → Web app URL
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxVn4chHjFrtCJ3yxuNIRC5ZjBd90BPPNF5RjSsLrHsuWmBvXJ-DzhrraATGlW1or08XQ/exec',
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxdsoT55lqh1mHvi7EMWBBM02ARK76FVSQmzpK1k3wq5ke02UvSSD1SdEEdUtKRswaw7g/exec',
 
   // Your Gemini API Key (for AI features)
   GEMINI_API_KEY: 'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY',
@@ -124,13 +124,13 @@ const api = {
   async get(action, params = {}) {
     if (!CONFIG.APPS_SCRIPT_URL || CONFIG.APPS_SCRIPT_URL.startsWith('YOUR_')) return null;
     const qs = new URLSearchParams({ action, ...params }).toString();
-    const res = await fetch(`${CONFIG.APPS_SCRIPT_URL}?${qs}`);
+    const res = await fetch(`${CONFIG.APPS_SCRIPT_URL}?${qs}`, { redirect: "follow" });
     return res.json();
   },
   async post(action, data) {
     if (!CONFIG.APPS_SCRIPT_URL || CONFIG.APPS_SCRIPT_URL.startsWith('YOUR_')) return null;
     const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain'},
       body: JSON.stringify({ action, data })
     });
     return res.json();
@@ -153,7 +153,7 @@ async function callGemini(prompt, jsonSchema = null) {
   const body = { contents:[{parts:[{text:prompt}]}] };
   if (jsonSchema) body.generationConfig = { responseMimeType:'application/json', responseSchema:jsonSchema };
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
-    { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    { method:'POST', redirect:'follow', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(body) });
   if (!res.ok) throw new Error(`Gemini ${res.status}`);
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
