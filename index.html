@@ -10,6 +10,7 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://accounts.google.com/gsi/client"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     body{font-family:'Nunito',sans-serif;}
     .font-serif,h1,h2,h3{font-family:'Playfair Display',serif;}
@@ -116,8 +117,18 @@ const AI = {
   async translate(text,lang) { return callGemini(`Translate this educational science text to ${lang} for a junior school student:\n"${text}"`); },
   async explain(concept) { return callGemini(`Explain "${concept}" to a 10-year-old in 2 sentences. British English.`); },
   async liveQuestions(content) {
-    return callGemini(`Generate 3 Multiple Choice Questions from this lesson content:\n"${content.substring(0,2000)}"\n4 options each, one correct. British English.`,
-      {type:'ARRAY',items:{type:'OBJECT',properties:{id:{type:'STRING'},text:{type:'STRING'},options:{type:'ARRAY',items:{type:'STRING'}},correctAnswer:{type:'STRING'}}}}) || [];
+    const prompt = `You are helping a UK Primary School science teacher run a live class quiz.
+Based on the lesson content below, generate 5 Multiple Choice Questions to check student understanding.
+Cover the key facts from the lesson. 4 options per question, one correct answer.
+Questions must be appropriate for Year 5-6 students (age 9-11). British English.
+
+Lesson Content: "${content.substring(0,3000)}"
+
+IMPORTANT: Assign a unique simple id like "q1", "q2" etc to each question.
+Return ONLY a JSON array, no other text.`;
+    return callGemini(prompt,
+      {type:'ARRAY',items:{type:'OBJECT',properties:{id:{type:'STRING'},text:{type:'STRING'},options:{type:'ARRAY',items:{type:'STRING'}},correctAnswer:{type:'STRING'}},required:['id','text','options','correctAnswer']}}) || [];
+  },
   },
   async liveAnalysis(questions,results) {
     return callGemini(`Analyse class quiz results.\nQuestions: ${JSON.stringify(questions)}\nPerformance: ${JSON.stringify(results)}\nRecommend: INDEPENDENT_STUDY / TEACHER_INTERVENTION / SPLIT_GROUP.\nSummary + 3 action items. British English.`,
@@ -735,7 +746,7 @@ function StudentLive({student,onExit}) {
   const [loading,setLoading] = useState(true);
   const [personalFeedback,setPersonalFeedback] = useState('');
   const [loadingFeedback,setLoadingFeedback] = useState(false);
-  const [currentSlide,setCurrentSlide] = useState(0);
+
 
   useEffect(()=>{
     const poll = async () => {
@@ -767,22 +778,7 @@ function StudentLive({student,onExit}) {
     setLoadingFeedback(false);
   };
 
-  // Parse slides from content (split by newlines into chunks)
-  const slides = useMemo(() => {
-    if (!session?.content) return [];
-    const lines = session.content.split('\n').filter(l => l.trim());
-    const chunks = [];
-    let current = [];
-    lines.forEach(line => {
-      current.push(line);
-      if (current.length >= 4 || line.endsWith('.') && current.length >= 2) {
-        chunks.push(current.join('\n'));
-        current = [];
-      }
-    });
-    if (current.length) chunks.push(current.join('\n'));
-    return chunks.length ? chunks : [session.content];
-  },[session?.content]);
+  // No slide display needed — teacher shows PPT on projector
 
   if (loading) return (
     <div className="flex items-center justify-center h-96">
@@ -800,38 +796,22 @@ function StudentLive({student,onExit}) {
     </div>
   );
 
-  // CONTENT VIEW — show slides
+  // CONTENT VIEW — teacher is presenting on projector, students wait
   if (session.currentStage==='CONTENT_VIEW') {
-    const slide = slides[currentSlide] || session.content;
     return (
-      <div className="max-w-3xl mx-auto p-4">
-        <div className="flex items-center mb-4">
-          <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span>
-          <span className="text-xs font-bold text-red-600 uppercase tracking-wider">📡 Live Lesson — Reading Time</span>
-        </div>
-
-        {/* Slide card */}
-        <div className="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden mb-4">
-          <div className="bg-[#002046] px-6 py-3 flex items-center justify-between">
-            <span className="text-[#C5A059] text-xs font-bold uppercase tracking-wider">Slide {currentSlide+1} of {slides.length}</span>
-            <span className="text-white text-xs opacity-60">NLCS Jeju · Curiosity Drive</span>
+      <div className="max-w-lg mx-auto p-6 text-center">
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-10">
+          <div className="flex items-center justify-center mb-6">
+            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span>
+            <span className="text-xs font-bold text-red-600 uppercase tracking-wider">Live Lesson</span>
           </div>
-          <div className="p-8 min-h-48 flex items-center">
-            <p className="text-slate-800 text-lg leading-relaxed whitespace-pre-line font-medium">{slide}</p>
+          <span className="text-6xl block mb-5">👀</span>
+          <h2 className="text-2xl font-bold text-[#002046] mb-3 font-serif">Lesson in Progress</h2>
+          <p className="text-slate-600 mb-2">Watch the projector screen and listen carefully.</p>
+          <p className="text-slate-400 text-sm mb-6">Your teacher will launch the quiz when ready — this page will update automatically.</p>
+          <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100">
+            <p className="text-amber-800 text-sm font-bold">📝 Top tip: Take notes now — they will help you answer the quiz!</p>
           </div>
-        </div>
-
-        {/* Slide navigation */}
-        {slides.length > 1 && (
-          <div className="flex justify-between items-center mb-4">
-            <button onClick={()=>setCurrentSlide(Math.max(0,currentSlide-1))} disabled={currentSlide===0} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm disabled:opacity-30 hover:bg-slate-50">← Previous</button>
-            <div className="flex gap-1">{slides.map((_,i)=><div key={i} className={`w-2 h-2 rounded-full ${i===currentSlide?'bg-[#002046]':'bg-slate-200'}`}></div>)}</div>
-            <button onClick={()=>setCurrentSlide(Math.min(slides.length-1,currentSlide+1))} disabled={currentSlide===slides.length-1} className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-sm disabled:opacity-30 hover:bg-slate-50">Next →</button>
-          </div>
-        )}
-
-        <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
-          <p className="text-blue-700 text-sm font-medium">📝 Read carefully and take notes. Questions will follow when your teacher starts the quiz!</p>
         </div>
       </div>
     );
@@ -950,26 +930,45 @@ function LiveSessionManager({teacher,onExit}) {
     setExtracting(true);
     setFileName(file.name);
     try {
-      if (file.type === 'text/plain') {
+      const name = file.name.toLowerCase();
+      if (name.endsWith('.txt')) {
         const text = await file.text();
         setContent(text);
-      } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-        // For PDF: read as text best-effort
-        const text = await file.text().catch(() => '');
-        if (text.trim()) { setContent(text); }
-        else { setContent(`[PDF: ${file.name}]\n\nCould not extract text automatically from this PDF. Please paste the key content from your slides below, or use the text box to summarise the lesson content.`); }
-      } else if (file.name.endsWith('.pptx') || file.name.endsWith('.ppt')) {
-        // For PPTX: extract XML text content
+      } else if (name.endsWith('.pdf')) {
+        setContent(`[PDF: ${file.name}]\n\nPDF text extraction requires manual copy-paste. Please:\n1. Open the PDF\n2. Select All text (Ctrl/Cmd+A)\n3. Copy and paste it into the text box below.`);
+      } else if (name.endsWith('.pptx')) {
+        // Check JSZip is available
+        if (typeof JSZip === 'undefined') {
+          setContent(`[File: ${file.name}]\n\nFile reader not ready yet. Please wait a moment and try again.`);
+        } else {
+          const buffer = await file.arrayBuffer();
+          const extracted = await extractPPTX(buffer, file.name);
+          setContent(extracted);
+        }
+      } else if (name.endsWith('.ppt')) {
+        setContent(`[File: ${file.name}]\n\nOlder .ppt format is not supported. Please save your file as .pptx (PowerPoint 2007 or later) and try again.`);
+      } else if (name.endsWith('.docx') || name.endsWith('.doc')) {
+        // Try reading docx as text
         const buffer = await file.arrayBuffer();
-        const extracted = await extractPPTX(buffer, file.name);
-        setContent(extracted);
+        try {
+          const zip = await JSZip.loadAsync(buffer);
+          const doc = await zip.files['word/document.xml']?.async('string');
+          if (doc) {
+            const matches = doc.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) || [];
+            const texts = matches.map(m => m.replace(/<[^>]*>/g,'').trim()).filter(t=>t.length>0);
+            setContent(`[From: ${file.name}]\n\n` + texts.join(' '));
+          } else {
+            setContent(`[File: ${file.name}]\n\nCould not read document. Please paste content below.`);
+          }
+        } catch {
+          setContent(`[File: ${file.name}]\n\nPlease paste your lesson content below.`);
+        }
       } else {
-        // Fallback: try reading as text
         const text = await file.text().catch(()=>'');
-        setContent(text || `File: ${file.name}\n\nPlease paste the key content from your slides in the text box below.`);
+        setContent(text || `[File: ${file.name}]\n\nPlease paste your lesson content in the text box below.`);
       }
     } catch(e) {
-      setContent(`File: ${file.name}\n\nCould not read this file automatically. Please paste your slide content in the text box below.`);
+      setContent(`Could not read ${file.name}. Please paste your lesson content in the text box below.`);
     }
     setExtracting(false);
   };
@@ -977,23 +976,42 @@ function LiveSessionManager({teacher,onExit}) {
   // Extract text from PPTX file (reads XML inside zip)
   const extractPPTX = async(buffer, name) => {
     try {
-      // PPTX files are ZIP archives — we look for slide XML files
-      const uint8 = new Uint8Array(buffer);
-      const decoder = new TextDecoder('utf-8', {fatal:false});
-      const raw = decoder.decode(uint8);
+      // Use JSZip to properly unpack the PPTX ZIP archive
+      const zip = await JSZip.loadAsync(buffer);
+      
+      // Get all slide XML files (sorted by slide number)
+      const slideFiles = Object.keys(zip.files)
+        .filter(f => f.match(/ppt\/slides\/slide[0-9]+\.xml$/))
+        .sort((a, b) => {
+          const na = parseInt(a.match(/slide(\d+)/)?.[1] || 0);
+          const nb = parseInt(b.match(/slide(\d+)/)?.[1] || 0);
+          return na - nb;
+        });
 
-      // Extract text from XML tags
-      const textMatches = raw.match(/<a:t[^>]*>([^<]+)<\/a:t>/g) || [];
-      const texts = textMatches
-        .map(m => m.replace(/<[^>]+>/g,'').trim())
-        .filter(t => t.length > 2 && !t.startsWith('<?'));
-
-      if (texts.length > 0) {
-        return `[From: ${name}]\n\n` + texts.join('\n');
+      if (slideFiles.length === 0) {
+        return `[File: ${name}]\n\nNo slides found. Please paste your lesson content below.`;
       }
-      return `[File: ${name}]\n\nCould not extract slide text. Please paste your lesson content below.`;
+
+      const slideTexts = [];
+      for (let i = 0; i < slideFiles.length; i++) {
+        const xml = await zip.files[slideFiles[i]].async('string');
+        // Extract all text runs from the slide XML
+        const matches = xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
+        const texts = matches
+          .map(m => m.replace(/<[^>]*>/g, '').trim())
+          .filter(t => t.length > 0);
+        if (texts.length > 0) {
+          slideTexts.push(`--- Slide ${i + 1} ---\n${texts.join(' ')}`);
+        }
+      }
+
+      if (slideTexts.length > 0) {
+        return `[From: ${name} — ${slideFiles.length} slides]\n\n` + slideTexts.join('\n\n');
+      }
+      return `[File: ${name}]\n\nSlides appear to be empty or image-only. Please paste your lesson content below.`;
     } catch(e) {
-      return `[File: ${name}]\n\nPlease paste your lesson content below.`;
+      console.error('PPTX extract error:', e);
+      return `[File: ${name}]\n\nCould not read this file. Please paste your lesson content below.`;
     }
   };
 
@@ -1063,8 +1081,8 @@ function LiveSessionManager({teacher,onExit}) {
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 mb-4">
-        <h3 className="font-bold text-slate-800 mb-1">Step 1 — Load Your Lesson Content</h3>
-        <p className="text-sm text-slate-500 mb-4">Upload a PowerPoint, PDF or text file — or paste your lesson notes directly.</p>
+        <h3 className="font-bold text-slate-800 mb-1">Load Your Lesson Content</h3>
+        <p className="text-sm text-slate-500 mb-4">Upload your PPT, paste your notes, or pick a demo file. AI will generate quiz questions — you show the slides on the projector as normal.</p>
 
         {/* Drag & Drop Zone */}
         <div
@@ -1120,9 +1138,15 @@ function LiveSessionManager({teacher,onExit}) {
         </div>
 
         <button onClick={generate} disabled={!content.trim()||loading} className="w-full bg-[#002046] text-[#C5A059] font-bold py-3.5 rounded-xl hover:bg-[#002d5c] disabled:opacity-40 transition-colors text-sm">
-          {loading?'🤖 AI is generating quiz questions...':'Step 2 — Generate Live Quiz →'}
+          {loading ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-[#C5A059]"></span>
+              AI is generating 5 quiz questions...
+            </span>
+          ) : '🚀 Generate Quiz Questions →'}
         </button>
-      </div>
+          <p className="text-xs text-slate-400 text-center mt-3">💡 Tip: Start your presentation on the projector first, then generate questions. Students wait on their devices until you launch the quiz.</p>
+    </div>
     </div>
   );
 
