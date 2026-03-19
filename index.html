@@ -9,9 +9,9 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.min.js"></script>
+
   <!-- Google Identity Services -->
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://accounts.google.com/gsi/client"></script>
   <style>
     body{font-family:'Nunito',sans-serif;}
     h1,h2,h3,.font-serif{font-family:'Playfair Display',serif;}
@@ -30,8 +30,8 @@
 
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
-// Wait for Recharts to be available
-const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = window.Recharts || {};
+
+
 
 // ═══════════════════════════════════════════════════════════════
 // ── CONFIGURATION — Fill these in after setup ──────────────────
@@ -911,7 +911,7 @@ function TeacherDashboard({ student: teacher, onLaunchLive }) {
 
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
           <h3 className="font-bold text-[#002046] mb-4">Grade Distribution</h3>
-          <div className="h-52"><ResponsiveContainer width="100%" height="100%"><BarChart data={gradeData}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/><XAxis dataKey="name" tick={{fontSize:8}}/><YAxis allowDecimals={false}/><Tooltip/><Bar dataKey="count" fill="#002046" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></div>
+          <div className="space-y-2 mt-2">{gradeData.map((g,i)=><div key={i} className="flex items-center gap-2"><span className="text-xs text-slate-500 w-20 flex-shrink-0">{g.name}</span><div className="flex-1 bg-slate-100 rounded-full h-5 relative"><div className="bg-[#002046] h-5 rounded-full flex items-center justify-end pr-2" style={{width:`${Math.max(g.count*33,g.count>0?15:0)}%`}}><span className="text-white text-xs font-bold">{g.count}</span></div></div></div>)}</div>
         </div>
       </div>
 
@@ -998,7 +998,7 @@ function LiveSessionManager({ student, onExit }) {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
           <div className="flex gap-2 mb-4 flex-wrap">{session.questions.map((_,i)=><button key={i} onClick={()=>setQIdx(i)} className={`px-3 py-1 rounded-full text-xs font-bold ${qIdx===i?'bg-[#002046] text-white':'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Q{i+1}</button>)}</div>
           <p className="font-bold text-slate-800 mb-3 text-sm">{session.questions[qIdx]?.text}</p>
-          <div className="h-40"><ResponsiveContainer width="100%" height="100%"><BarChart data={results()}><CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/><XAxis dataKey="option" tick={{fontSize:9}}/><YAxis allowDecimals={false}/><Tooltip/><Bar dataKey="count" fill="#002046" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></div>
+          <div className="space-y-2 mt-2">{results().map((r,i)=><div key={i} className="flex items-center gap-2"><span className="text-xs text-slate-500 w-24 flex-shrink-0 truncate">{r.option}</span><div className="flex-1 bg-slate-100 rounded-full h-5 relative"><div className="bg-[#002046] h-5 rounded-full flex items-center justify-end pr-2" style={{width:`${Math.max(r.count*33,r.count>0?15:0)}%`}}><span className="text-white text-xs font-bold">{r.count}</span></div></div></div>)}</div>
           <p className="text-xs text-slate-400 mt-2">Correct: <strong>{session.questions[qIdx]?.correctAnswer}</strong> · Responses: {session.studentResponses.filter(r=>r.questionId===session.questions[qIdx]?.id).length}</p>
         </div>
       )}
