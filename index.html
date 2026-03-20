@@ -12,14 +12,12 @@
   <script src="https://accounts.google.com/gsi/client"></script>
   <style>
     body { font-family: 'Nunito', sans-serif; background-color: #f0f7ff; color: #002046; }
-    .font-serif { font-family: 'Playfair Display', serif; }
     .nlcs-navy { background-color: #002046; }
-    .border-nlcs { border-color: #78beeb; }
     .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); border: 1px solid rgba(120, 190, 235, 0.3); }
     .rocket-float { animation: float 3s ease-in-out infinite; display: inline-block; }
     @keyframes float { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-10px) rotate(5deg); } }
-    .btn-nlcs { background-color: #002046; color: white; transition: all 0.3s ease; }
-    .btn-nlcs:hover { background-color: #78beeb; color: #002046; transform: translateY(-2px); }
+    .btn-teacher { background: linear-gradient(135deg, #002046 0%, #1e3a8a 100%); color: white; }
+    .teacher-badge { background: #78beeb; color: #002046; font-weight: 900; padding: 2px 8px; borderRadius: 6px; fontSize: 10px; }
   </style>
 </head>
 <body>
@@ -29,75 +27,31 @@
 const { useState, useEffect } = React;
 
 const CONFIG = {
-  LOGO_URL: 'https://i.ibb.co/LzNfXmY/NLCS-Logo.png', // Provided logo
+  LOGO_URL: 'https://i.ibb.co/LzNfXmY/NLCS-Logo.png', 
   GOOGLE_CLIENT_ID: '594310820254-vtdhfitril7tqh6csj9vn5uakpj3s7fm.apps.googleusercontent.com',
   APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxdsoT55lqh1mHvi7EMWBBM02ARK76FVSQmzpK1k3wq5ke02UvSSD1SdEEdUtKRswaw7g/exec',
-  GEMINI_API_KEY: 'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY',
-  TEACHER_EMAILS: ['aharrison@nlcsjeju.kr']
+  TEACHER_DOMAIN: '@nlcsjeju.kr'
 };
-
-const TOPICS = [
-  { id: 'y5-forces', name: 'Forces & Friction', year: 5, icon: '🧲', lab: 'https://phet.colorado.edu/sims/html/forces-and-motion-basics/latest/forces-and-motion-basics_en.html' },
-  { id: 'y6-light', name: 'Light & Reflection', year: 6, icon: '💡', lab: 'https://phet.colorado.edu/sims/html/bending-light/latest/bending-light_en.html' },
-  { id: 'y6-circ', name: 'Circulatory System', year: 6, icon: '🫀', lab: 'https://www.bbc.co.uk/bitesize/topics/zwdr6yc' },
-  { id: 'y5-space', name: 'Earth & Space', year: 5, icon: '🪐', lab: 'https://phet.colorado.edu/sims/html/gravity-and-orbits/latest/gravity-and-orbits_en.html' }
-];
 
 function App() {
   const [user, setUser] = useState(null);
+  const [role, setRole] = useState('STUDENT');
   const [view, setView] = useState('SIGNIN');
-  const [studentClass, setStudentClass] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [activeTopic, setActiveTopic] = useState(null);
-  const [lessonContent, setLessonContent] = useState(null);
-  const [quiz, setQuiz] = useState(null);
-  const [journal, setJournal] = useState([]);
-
-  // --- GOOGLE SHEETS SYNC ---
-  const syncToSheet = async (type, payload) => {
-    try {
-      await fetch(CONFIG.APPS_SCRIPT_URL, {
-        method: 'POST',
-        mode: 'no-cors', // Required for Apps Script Web App
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'logActivity', data: { type, email: user.email, ...payload } })
-      });
-    } catch (e) { console.error("Sheet sync failed", e); }
-  };
+  const [isStudentPreview, setIsStudentPreview] = useState(false);
 
   const onLogin = (res) => {
     const p = JSON.parse(atob(res.credential.split('.')[1]));
     setUser(p);
-    setView('CLASS_SELECT');
-  };
-
-  const startLesson = async (t) => {
-    setLoading(true); setActiveTopic(t);
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: `Create a Year ${t.year} Science chapter on ${t.name}. JSON format: {"title":"","intro":"","sections":[{"h":"","p":""}]}` }] }], generationConfig: { responseMimeType: 'application/json' } })
-    });
-    const data = await res.json();
-    setLessonContent(JSON.parse(data.candidates[0].content.parts[0].text));
-    setView('TEXTBOOK');
-    setLoading(false);
-  };
-
-  const handleJournalSubmit = async (desc) => {
-    setLoading(true);
-    const prompt = `Analyze this experiment: "${desc}". Return JSON: {"topic":"","skill":"","badge":""}`;
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } })
-    });
-    const data = await res.json();
-    const result = JSON.parse(data.candidates[0].content.parts[0].text);
-    const entry = { ...result, desc, date: new Date().toLocaleDateString() };
     
-    setJournal([entry, ...journal]);
-    await syncToSheet('JOURNAL_ENTRY', { data: entry });
-    setLoading(false);
+    // Check if the email ends with the school staff domain
+    const isTeacher = p.email.toLowerCase().endsWith(CONFIG.TEACHER_DOMAIN);
+    setRole(isTeacher ? 'TEACHER' : 'STUDENT');
+    
+    if (isTeacher) {
+      setView('TEACHER_HUB');
+    } else {
+      setView('CLASS_SELECT');
+    }
   };
 
   const Branding = ({ size = "w-12" }) => (
@@ -109,113 +63,92 @@ function App() {
 
   if (view === 'SIGNIN') return (
     <div className="min-h-screen flex items-center justify-center bg-[#002046]">
-      <div className="bg-white p-12 rounded-[3.5rem] text-center shadow-2xl max-w-sm w-full border-b-8 border-[#78beeb]">
+      <div className="glass p-12 rounded-[4rem] text-center shadow-2xl max-w-sm border-b-8 border-[#78beeb]">
         <div className="flex justify-center mb-6"><Branding size="w-20" /></div>
-        <h1 className="text-3xl font-black text-slate-900">Curiosity Drive</h1>
-        <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mb-10">NLCS Jeju Junior School</p>
+        <h1 className="text-3xl font-black text-[#002046]">Curiosity Drive</h1>
+        <p className="text-slate-400 font-bold text-[10px] tracking-widest mb-10">JUNIOR SCHOOL SCIENCE</p>
         <div id="g-login" ref={r => { if(r && window.google) {
           window.google.accounts.id.initialize({ client_id: CONFIG.GOOGLE_CLIENT_ID, callback: onLogin });
-          window.google.accounts.id.renderButton(r, {theme:'outline', size:'large', shape:'pill', width: 250});
+          window.google.accounts.id.renderButton(r, {theme:'outline', size:'large', shape:'pill'});
         }}}></div>
       </div>
     </div>
   );
 
-  if (view === 'CLASS_SELECT') return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-      <div className="bg-white p-10 rounded-[3rem] shadow-xl max-w-2xl w-full text-center border-t-8 border-[#002046]">
-        <h2 className="text-3xl font-black mb-8 text-[#002046]">Select Your Class</h2>
-        <div className="grid grid-cols-5 gap-3">
-          {['5A','5B','5C','5D','5E','6A','6B','6C','6D','6E'].map(c => (
-            <button key={c} onClick={() => { setStudentClass(c); setView('DASHBOARD'); }} className="p-4 rounded-2xl border-2 border-slate-100 hover:border-[#78beeb] hover:bg-blue-50 font-black transition-all">{c}</button>
-          ))}
+  // ═══════════════════════════════════════
+  // TEACHER HUB VIEW
+  // ═══════════════════════════════════════
+  if (view === 'TEACHER_HUB' && !isStudentPreview) return (
+    <div className="max-w-6xl mx-auto p-8 animate-in fade-in">
+      <nav className="flex justify-between items-center mb-10 glass p-6 rounded-[2.5rem] shadow-xl border-b-4 border-[#78beeb]">
+        <Branding />
+        <div className="flex gap-4 items-center">
+          <span className="teacher-badge uppercase">Staff Access</span>
+          <button onClick={() => setIsStudentPreview(true)} className="px-6 py-3 bg-[#002046] text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-[#78beeb] hover:text-[#002046] transition-all">
+            👁️ Student View
+          </button>
+        </div>
+      </nav>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="md:col-span-2 space-y-8">
+          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
+            <h2 className="text-3xl font-black text-[#002046] mb-2">Welcome, {user.given_name}</h2>
+            <p className="text-slate-500 font-bold">Science Department Portal • Junior School</p>
+          </div>
+          <div className="grid grid-cols-2 gap-6">
+            <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
+                <p className="text-slate-400 font-black text-[10px] uppercase">Active Sessions</p>
+                <p className="text-4xl font-black text-[#002046]">8 Classes</p>
+            </div>
+            <div className="bg-white p-8 rounded-[2.5rem] border shadow-sm">
+                <p className="text-slate-400 font-black text-[10px] uppercase">Scientific Journals</p>
+                <p className="text-4xl font-black text-emerald-500">142 Total</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-[#002046] p-10 rounded-[3.5rem] text-white shadow-2xl border-b-8 border-[#78beeb]">
+          <h3 className="text-2xl font-black mb-6">Staff Tools</h3>
+          <ul className="space-y-4">
+            <li className="p-4 bg-white/5 rounded-2xl border border-white/10 text-sm font-bold cursor-pointer hover:bg-white/10">Download Activity CSV</li>
+            <li className="p-4 bg-white/5 rounded-2xl border border-white/10 text-sm font-bold cursor-pointer hover:bg-white/10">Edit Science Topics</li>
+            <li className="p-4 bg-white/5 rounded-2xl border border-white/10 text-sm font-bold cursor-pointer hover:bg-white/10">Reset Leaderboards</li>
+          </ul>
         </div>
       </div>
     </div>
   );
 
+  // ═══════════════════════════════════════
+  // STUDENT VIEW (PREVIEW MODE FOR TEACHERS)
+  // ═══════════════════════════════════════
   return (
-    <div className="max-w-6xl mx-auto p-4 md:p-8 pb-24">
-      <nav className="flex justify-between items-center mb-10 glass p-5 rounded-[2.5rem] sticky top-4 z-50 shadow-sm">
-        <div className="cursor-pointer" onClick={() => setView('DASHBOARD')}><Branding /></div>
-        <div className="flex gap-2">
-          {['DASHBOARD', 'JOURNAL', 'LEADERBOARD'].map(v => (
-            <button key={v} onClick={() => setView(v)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${view===v?'bg-[#002046] text-white':'text-slate-400'}`}>{v}</button>
-          ))}
+    <div className="max-w-6xl mx-auto p-8 animate-in slide-in-from-bottom-10">
+      {role === 'TEACHER' && (
+        <div className="mb-6 flex justify-center sticky top-0 z-[100]">
+          <button onClick={() => setIsStudentPreview(false)} className="px-8 py-2 bg-emerald-500 text-white rounded-full font-black text-[10px] uppercase tracking-[0.3em] shadow-xl border-4 border-white hover:scale-105 transition-all">
+            ← Exit Student View
+          </button>
+        </div>
+      )}
+      
+      <nav className="flex justify-between items-center mb-10 glass p-5 rounded-[2.5rem] border-b-4 border-[#78beeb]">
+        <Branding />
+        <div className="text-right">
+           <p className="text-[10px] font-black text-slate-400 uppercase">Student Experience</p>
+           <p className="font-black text-[#002046]">{user.name}</p>
         </div>
       </nav>
 
-      {view === 'DASHBOARD' && (
-        <div className="space-y-10 animate-in fade-in duration-500">
-          <header className="flex justify-between items-end bg-[#002046] p-10 rounded-[3rem] text-white border-b-8 border-[#78beeb]">
-            <div>
-              <h1 className="text-4xl font-black">Mission Control</h1>
-              <p className="opacity-70 font-bold uppercase text-xs tracking-widest mt-1">Class {studentClass} • Scientist {user.name}</p>
-            </div>
-            <div className="text-right hidden sm:block"><p className="text-[10px] font-black uppercase opacity-60">Total XP</p><p className="text-3xl font-black text-[#78beeb]">1,240</p></div>
-          </header>
-
-          <section>
-            <h2 className="text-2xl font-black mb-6 text-[#002046]">The Library</h2>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-              {TOPICS.map(t => (
-                <div key={t.id} onClick={() => startLesson(t)} className="bg-white p-8 rounded-[2.5rem] border shadow-sm hover:shadow-xl transition-all cursor-pointer group hover:-translate-y-1">
-                  <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">{t.icon}</div>
-                  <h3 className="font-black text-[#002046]">{t.name}</h3>
-                  <div className="mt-4 flex justify-between items-center text-[10px] font-black text-slate-400 uppercase"><span>Year {t.year}</span><span className="text-[#78beeb]">Explore →</span></div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      )}
-
-      {view === 'TEXTBOOK' && lessonContent && (
-        <div className="max-w-3xl mx-auto bg-white p-12 rounded-[4rem] shadow-2xl border-t-8 border-[#002046] animate-in slide-in-from-bottom-8">
-          <h1 className="text-5xl font-serif font-black mb-8 leading-tight text-[#002046]">{lessonContent.title}</h1>
-          <p className="text-xl text-slate-600 leading-relaxed italic mb-12 border-l-8 border-[#78beeb] pl-8">"{lessonContent.intro}"</p>
-          <div className="space-y-12">
-            {lessonContent.sections.map((s, i) => (
-              <div key={i}><h2 className="text-2xl font-black mb-4 text-[#002046]">{s.h}</h2><p className="text-slate-600 leading-relaxed text-lg">{s.p}</p></div>
-            ))}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+        {['🧲 Forces', '💡 Light', '🫀 Circulation', '🪐 Space'].map(t => (
+          <div key={t} className="bg-white p-10 rounded-[3rem] border-b-4 border-transparent hover:border-[#78beeb] shadow-md hover:shadow-2xl transition-all text-center">
+            <div className="text-6xl mb-4">{t.split(' ')[0]}</div>
+            <h3 className="text-xl font-black text-[#002046]">{t.split(' ')[1]}</h3>
           </div>
-          <div className="mt-16 flex gap-4">
-            <button onClick={() => alert("Quiz Logged to Sheet!")} className="flex-1 btn-nlcs py-6 rounded-3xl font-black text-xl shadow-xl">Complete Module</button>
-            <a href={activeTopic.lab} target="_blank" className="px-10 flex items-center bg-[#78beeb] text-[#002046] rounded-3xl font-black text-xl hover:bg-[#002046] hover:text-white transition-all">Open Lab 🧪</a>
-          </div>
-        </div>
-      )}
-
-      {view === 'JOURNAL' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
-          <div className="lg:col-span-1 bg-white p-10 rounded-[3rem] shadow-xl border-t-8 border-[#78beeb]">
-            <h2 className="text-2xl font-black mb-6 text-[#002046]">Science Journal</h2>
-            <textarea id="j-input" className="w-full p-6 bg-slate-50 rounded-3xl h-48 text-sm mb-6 border-none ring-2 ring-slate-100 focus:ring-[#78beeb] transition-all" placeholder="What did you observe today?"></textarea>
-            <button onClick={() => handleJournalSubmit(document.getElementById('j-input').value)} className="w-full btn-nlcs py-5 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg">Log to Database</button>
-          </div>
-          <div className="lg:col-span-2 space-y-4">
-            {journal.map((e, i) => (
-              <div key={i} className="bg-white p-8 rounded-[3rem] shadow-sm border flex gap-8 items-center border-l-8 border-[#78beeb]">
-                <div className="text-5xl">🔬</div>
-                <div className="flex-1">
-                  <div className="flex justify-between"><h4 className="font-black text-[#002046]">{e.topic}</h4><span className="text-[10px] font-black text-yellow-600 uppercase tracking-widest">🏅 {e.badge}</span></div>
-                  <p className="text-sm text-slate-500 italic mt-1 leading-relaxed">"{e.desc}"</p>
-                  <p className="text-[10px] font-black text-blue-500 mt-4 uppercase">Skill Identified: {e.skill}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {loading && (
-        <div className="fixed inset-0 bg-[#002046]/90 backdrop-blur-md flex flex-col items-center justify-center z-[1000]">
-           <div className="rocket-float text-8xl mb-6">🚀</div>
-           <div className="bg-white p-12 rounded-[3.5rem] text-center shadow-2xl border-b-8 border-[#78beeb]">
-              <p className="font-black text-[#002046] text-2xl tracking-tight">Syncing with NLCS Database...</p>
-           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }
