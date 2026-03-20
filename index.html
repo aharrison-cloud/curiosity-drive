@@ -11,100 +11,48 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://accounts.google.com/gsi/client"></script>
   <style>
-    body { font-family: 'Nunito', sans-serif; background-color: #f8fafc; color: #002046; }
-    .font-serif { font-family: 'Playfair Display', serif; }
-    .glass { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(0,32,70,0.1); }
-    .btn-primary { background-color: #002046; color: white; transition: all 0.2s; }
-    .btn-primary:hover { background-color: #78beeb; color: #002046; transform: translateY(-2px); }
-    .accent-border { border-left: 8px solid #78beeb; }
-    .card-shadow { box-shadow: 0 10px 30px -5px rgba(0, 32, 70, 0.1); }
+    body { font-family: 'Nunito', sans-serif; background: #f0f4f8; color: #002046; }
+    .pillar-card { transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; border: 2px solid transparent; }
+    .pillar-card:hover { transform: translateY(-12px); border-color: #78beeb; box-shadow: 0 25px 50px -12px rgba(0, 32, 70, 0.15); }
+    .glass-nav { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(15px); border-bottom: 1px solid rgba(0,32,70,0.1); }
+    .teacher-gradient { background: linear-gradient(135deg, #002046 0%, #1e3a8a 100%); }
+    .ship-icon { display: inline-block; width: 40px; height: 40px; background: #002046; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); }
   </style>
 </head>
 <body>
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect } = React;
+const { useState } = React;
 
 const CONFIG = {
-  LOGO_URL: 'https://i.ibb.co/LzNfXmY/NLCS-Logo.png', 
   GOOGLE_CLIENT_ID: '594310820254-vtdhfitril7tqh6csj9vn5uakpj3s7fm.apps.googleusercontent.com',
   APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxdsoT55lqh1mHvi7EMWBBM02ARK76FVSQmzpK1k3wq5ke02UvSSD1SdEEdUtKRswaw7g/exec',
   GEMINI_API_KEY: 'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY',
   TEACHER_DOMAIN: '@nlcsjeju.kr'
 };
 
-const TOPICS = [
-  { id: 'forces', name: 'Forces & Friction', year: 5, icon: '🧲', lab: 'https://phet.colorado.edu/sims/html/forces-and-motion-basics/latest/forces-and-motion-basics_en.html' },
-  { id: 'light', name: 'Light & Reflection', year: 6, icon: '💡', lab: 'https://phet.colorado.edu/sims/html/bending-light/latest/bending-light_en.html' },
-  { id: 'circ', name: 'Circulatory System', year: 6, icon: '🫀', lab: 'https://www.bbc.co.uk/bitesize/topics/zwdr6yc' }
-];
-
 function App() {
   const [user, setUser] = useState(null);
-  const [role, setRole] = useState('STUDENT');
   const [view, setView] = useState('SIGNIN');
-  const [activeTopic, setActiveTopic] = useState(TOPICS[0]);
-  const [content, setContent] = useState(null);
-  const [quiz, setQuiz] = useState(null);
-  const [accelerators, setAccelerators] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [activeTopic, setActiveTopic] = useState({ name: 'Forces & Friction', year: 5 });
+  const [isStudentPreview, setIsStudentPreview] = useState(false);
 
-  // --- Login Handler ---
   const onLogin = (res) => {
     const p = JSON.parse(atob(res.credential.split('.')[1]));
     setUser(p);
     const isTeacher = p.email.toLowerCase().endsWith(CONFIG.TEACHER_DOMAIN);
-    setRole(isTeacher ? 'TEACHER' : 'STUDENT');
-    setView(isTeacher ? 'TEACHER_HUB' : 'DASHBOARD');
+    if (isTeacher) setView('TEACHER_HUB');
+    else setView('DASHBOARD');
   };
 
-  // --- Pillar 1: AI Textbook ---
-  const loadTextbook = async (topic) => {
-    setLoading(true); setView('TEXTBOOK'); setActiveTopic(topic);
-    const prompt = `Create a Year ${topic.year} science chapter for ${topic.name}. Focus on NLCS Jeju academic standards. JSON: {"title":"","intro":"","sections":[{"h":"","p":""}]}`;
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } })
-    });
-    const data = await res.json();
-    setContent(JSON.parse(data.candidates[0].content.parts[0].text));
-    setLoading(false);
-  };
-
-  // --- Pillar 3: Specialized Quiz ---
-  const loadQuiz = async () => {
-    setLoading(true); setView('QUIZ');
-    const prompt = `Create a 3-question quiz on ${activeTopic.name}. 
-    Q1: Content Knowledge. Q2: Scientific Communication (Vocab). Q3: Working Scientifically (Method/Variables).
-    JSON: {"questions": [{"q":"","options":["","",""],"correct":0, "type":""}]}`;
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } })
-    });
-    const data = await res.json();
-    setQuiz(JSON.parse(data.candidates[0].content.parts[0].text).questions);
-    setLoading(false);
-  };
-
-  // --- Pillar 4: Curiosity Accelerators (Bottom Section) ---
-  const loadExtensions = async (score) => {
-    setLoading(true);
-    const prompt = `Student scored ${score}/3 on ${activeTopic.name}. Suggest one "Curiosity Accelerator" to extend knowledge and one "Gap Fill" to fix mistakes. JSON: {"extension":{"title":"","task":""}, "gapFill":{"title":"","task":""}}`;
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`, {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } })
-    });
-    const data = await res.json();
-    setAccelerators(JSON.parse(data.candidates[0].content.parts[0].text));
-    setLoading(false);
-  };
-
+  // --- Login Screen ---
   if (view === 'SIGNIN') return (
-    <div className="min-h-screen flex items-center justify-center bg-[#002046] p-4">
-      <div className="bg-white p-12 rounded-[3rem] text-center shadow-2xl max-w-sm w-full">
-        <img src={CONFIG.LOGO_URL} className="w-20 mx-auto mb-6" />
-        <h1 className="text-3xl font-black mb-10">Curiosity Drive</h1>
+    <div className="min-h-screen flex items-center justify-center bg-[#002046] p-6">
+      <div className="bg-white p-12 rounded-[4rem] text-center shadow-2xl max-w-sm w-full border-b-8 border-[#78beeb]">
+        <div className="ship-icon mb-6"></div>
+        <h1 className="text-3xl font-black mb-2">Curiosity Drive</h1>
+        <p className="text-slate-400 font-bold text-xs tracking-widest mb-10 uppercase">Junior School Science</p>
         <div id="g-login" ref={r => { if(r && window.google) {
           window.google.accounts.id.initialize({ client_id: CONFIG.GOOGLE_CLIENT_ID, callback: onLogin });
           window.google.accounts.id.renderButton(r, {theme:'outline', size:'large', shape:'pill', width: 250});
@@ -113,103 +61,110 @@ function App() {
     </div>
   );
 
+  // --- Teacher Hub (The Starting Point for Staff) ---
+  if (view === 'TEACHER_HUB' && !isStudentPreview) return (
+    <div className="min-h-screen p-8">
+      <nav className="flex justify-between items-center mb-12 glass-nav p-6 rounded-[2.5rem] shadow-sm">
+        <div className="font-black text-2xl flex items-center gap-3">
+          <div className="ship-icon w-8 h-8"></div> Teacher Portal
+        </div>
+        <button onClick={() => setIsStudentPreview(true)} className="px-8 py-3 teacher-gradient text-white rounded-2xl font-black text-sm hover:scale-105 transition-all shadow-lg">
+          Switch to Student View 👁️
+        </button>
+      </nav>
+      
+      <div className="max-w-6xl mx-auto">
+        <h2 className="text-5xl font-black mb-4">Welcome, {user.given_name}</h2>
+        <p className="text-slate-500 font-bold mb-10 text-xl">Monitor science engagement and curiosities.</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
+            <h4 className="text-xs font-black text-slate-400 uppercase mb-2">Journal Entries</h4>
+            <p className="text-5xl font-black">124</p>
+          </div>
+          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100 md:col-span-2">
+            <h4 className="text-xs font-black text-slate-400 uppercase mb-2">Scientific Feedback Needed</h4>
+            <div className="mt-4 p-4 bg-orange-50 rounded-2xl text-orange-700 font-bold">● 5 Students awaiting feedback on "Light" module.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // --- Student Dashboard (Spread out interactive page) ---
   return (
     <div className="min-h-screen pb-20">
-      <nav className="glass sticky top-0 z-[100] px-6 py-4 mb-8 border-b border-slate-200">
-        <div className="max-w-6xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-4 cursor-pointer" onClick={() => setView('DASHBOARD')}>
-            <img src={CONFIG.LOGO_URL} className="w-10" />
-            <span className="font-black tracking-tight text-xl hidden sm:inline">NLCS Science</span>
-          </div>
-          <div className="flex bg-slate-100 p-1 rounded-2xl gap-1">
-            {['TEXTBOOK', 'LAB', 'QUIZ'].map(p => (
-              <button key={p} onClick={() => { if(p === 'TEXTBOOK') loadTextbook(activeTopic); else if(p === 'QUIZ') loadQuiz(); else setView(p); }} 
-                className={`px-6 py-2 rounded-xl text-[10px] font-black transition-all ${view === p ? 'bg-[#002046] text-white shadow-md' : 'text-slate-500 hover:text-[#002046]'}`}>
-                {p}
-              </button>
-            ))}
-          </div>
+      {/* Staff Override Bar */}
+      {view === 'TEACHER_HUB' && (
+        <div className="bg-emerald-500 p-2 text-center text-white text-[10px] font-black uppercase tracking-widest sticky top-0 z-[200]">
+          Teacher Preview Mode — <button onClick={() => setIsStudentPreview(false)} className="underline">Back to Hub</button>
+        </div>
+      )}
+
+      <nav className="px-8 py-6 flex justify-between items-center max-w-7xl mx-auto">
+        <div className="flex items-center gap-3 font-black text-xl text-[#002046]">
+          <div className="ship-icon w-6 h-6"></div> Curiosity Drive
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Current Mission</p>
+          <p className="font-black text-sm">{activeTopic.name}</p>
         </div>
       </nav>
 
-      <main className="max-w-4xl mx-auto px-6 animate-in fade-in duration-500">
-        
-        {/* DASHBOARD: TOPIC SELECTION */}
-        {view === 'DASHBOARD' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {TOPICS.map(t => (
-              <div key={t.id} onClick={() => loadTextbook(t)} className="bg-white p-10 rounded-[2.5rem] card-shadow border-b-4 border-transparent hover:border-[#78beeb] cursor-pointer group transition-all">
-                <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">{t.icon}</div>
-                <h3 className="text-xl font-black">{t.name}</h3>
-                <p className="text-[10px] font-black text-slate-400 mt-2 uppercase">Year {t.year} Core</p>
-              </div>
-            ))}
+      <main className="max-w-7xl mx-auto px-8 mt-10">
+        <header className="mb-16">
+          <h1 className="text-6xl font-black text-[#002046] tracking-tight">Interactive Lab</h1>
+          <p className="text-xl text-slate-500 mt-4 font-bold max-w-2xl leading-relaxed">Choose a pillar to begin your scientific inquiry. Follow the drive from theory to practical application.</p>
+        </header>
+
+        {/* INTERACTIVE GRID: SPREAD ACROSS PAGE */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          
+          {/* PILLAR 1: TEXTBOOK */}
+          <div onClick={() => alert("Loading AI Textbook...")} className="pillar-card bg-white p-12 rounded-[4rem] shadow-xl flex flex-col h-[450px]">
+            <div className="text-6xl mb-8">📖</div>
+            <h2 className="text-3xl font-black mb-4">Scientific Theory</h2>
+            <p className="text-slate-500 font-bold leading-relaxed mb-8 flex-1">Explore custom chapters generated by AI specifically for the Year {activeTopic.year} curriculum.</p>
+            <div className="bg-blue-50 text-blue-600 p-4 rounded-2xl font-black text-center text-xs uppercase tracking-widest">Open Textbook</div>
           </div>
-        )}
 
-        {/* PILLAR 1: TEXTBOOK */}
-        {view === 'TEXTBOOK' && content && (
-          <div className="bg-white p-12 rounded-[3.5rem] card-shadow">
-            <h1 className="text-5xl font-serif font-black mb-6 text-[#002046]">{content.title}</h1>
-            <p className="text-xl text-slate-500 italic mb-10 accent-border pl-6 leading-relaxed">{content.intro}</p>
-            {content.sections.map((s, i) => (
-              <div key={i} className="mb-10"><h2 className="text-2xl font-black mb-4">{s.h}</h2><p className="text-lg text-slate-600 leading-relaxed">{s.p}</p></div>
-            ))}
+          {/* PILLAR 2: PRACTICAL LAB */}
+          <div onClick={() => alert("Launching Simulation...")} className="pillar-card bg-[#002046] p-12 rounded-[4rem] shadow-xl flex flex-col h-[450px] text-white">
+            <div className="text-6xl mb-8">🧪</div>
+            <h2 className="text-3xl font-black mb-4 text-[#78beeb]">Interactive Lab</h2>
+            <p className="text-white/60 font-bold leading-relaxed mb-8 flex-1">Jump into PhET simulations and digital experiments to test your hypotheses in real-time.</p>
+            <div className="bg-white/10 text-white p-4 rounded-2xl font-black text-center text-xs uppercase tracking-widest border border-white/20">Launch Lab</div>
           </div>
-        )}
 
-        {/* PILLAR 2: LAB */}
-        {view === 'LAB' && (
-          <div className="h-[70vh] rounded-[3.5rem] overflow-hidden card-shadow border-4 border-white">
-            <iframe src={activeTopic.lab} className="w-full h-full" allowFullScreen></iframe>
+          {/* PILLAR 3: QUIZ & FEEDBACK */}
+          <div onClick={() => alert("Starting Assessment...")} className="pillar-card bg-white p-12 rounded-[4rem] shadow-xl flex flex-col h-[450px]">
+            <div className="text-6xl mb-8">🎯</div>
+            <h2 className="text-3xl font-black mb-4">Mastery Check</h2>
+            <p className="text-slate-500 font-bold leading-relaxed mb-8 flex-1">Test your content knowledge, scientific communication, and working scientifically skills.</p>
+            <div className="bg-slate-100 text-slate-400 p-4 rounded-2xl font-black text-center text-xs uppercase tracking-widest">Start Quiz</div>
           </div>
-        )}
 
-        {/* PILLAR 3: QUIZ SECTION */}
-        {view === 'QUIZ' && quiz && (
-          <div className="space-y-6">
-            <div className="bg-[#002046] p-10 rounded-[3rem] text-white">
-              <h2 className="text-3xl font-black">Skills Assessment</h2>
-              <p className="opacity-70">Topic: {activeTopic.name}</p>
-            </div>
-            {quiz.map((q, i) => (
-              <div key={i} className="bg-white p-8 rounded-[2.5rem] card-shadow">
-                <span className="text-[10px] font-black text-[#78beeb] uppercase mb-2 block">{q.type || 'Assessment'}</span>
-                <p className="text-xl font-bold mb-6">{q.q}</p>
-                <div className="grid grid-cols-1 gap-3">
-                  {q.options.map((opt, oi) => (
-                    <button key={oi} onClick={() => loadExtensions(Math.floor(Math.random()*3)+1)} className="p-5 text-left rounded-2xl border-2 border-slate-50 hover:border-[#78beeb] hover:bg-blue-50 transition-all font-bold">{opt}</button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* PILLAR 4: ACCELERATORS (EXTENSION & GAP FILL) */}
-        {accelerators && (view === 'QUIZ' || view === 'ACCELERATOR') && (
-          <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-6 animate-in slide-in-from-bottom-10">
-            <div className="bg-white p-8 rounded-[2.5rem] card-shadow border-t-8 border-emerald-400">
-               <h4 className="text-emerald-500 font-black text-xs uppercase mb-2">🚀 Curiosity Accelerator</h4>
-               <h5 className="text-xl font-black mb-3">{accelerators.extension.title}</h5>
-               <p className="text-sm text-slate-500">{accelerators.extension.task}</p>
-            </div>
-            <div className="bg-white p-8 rounded-[2.5rem] card-shadow border-t-8 border-orange-400">
-               <h4 className="text-orange-500 font-black text-xs uppercase mb-2">🩹 Knowledge Gap-Fill</h4>
-               <h5 className="text-xl font-black mb-3">{accelerators.gapFill.title}</h5>
-               <p className="text-sm text-slate-500">{accelerators.gapFill.task}</p>
-            </div>
-          </div>
-        )}
-
-      </main>
-
-      {loading && (
-        <div className="fixed inset-0 bg-[#002046]/90 backdrop-blur-md z-[1000] flex flex-col items-center justify-center">
-          <div className="w-16 h-16 border-4 border-[#78beeb] border-t-transparent rounded-full animate-spin mb-6"></div>
-          <p className="text-white font-black text-xl tracking-widest uppercase">Consulting AI Laboratory...</p>
         </div>
-      )}
+
+        {/* BOTTOM SECTION: CURIOSITY ACCELERATORS */}
+        <div className="mt-20 border-t-2 border-slate-200 pt-16">
+          <div className="flex items-center gap-4 mb-10">
+            <span className="bg-[#78beeb] text-[#002046] px-4 py-1 rounded-full font-black text-[10px] uppercase">New Suggestions</span>
+            <h3 className="text-3xl font-black">Curiosity Accelerators</h3>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="bg-emerald-50 p-10 rounded-[3.5rem] border-2 border-emerald-100">
+              <h4 className="text-emerald-600 font-black text-xl mb-3">🚀 Extension Mission</h4>
+              <p className="text-emerald-900/60 font-bold">Complete the quiz with 100% to unlock the "Super-Fluid" deep dive experiment.</p>
+            </div>
+            <div className="bg-amber-50 p-10 rounded-[3.5rem] border-2 border-amber-100">
+              <h4 className="text-amber-600 font-black text-xl mb-3">🩹 Gap-Fill Activity</h4>
+              <p className="text-amber-900/60 font-bold">Need a refresh on terminology? Check out the "Vocab Vault" for this week's keywords.</p>
+            </div>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
