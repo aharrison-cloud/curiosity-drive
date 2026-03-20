@@ -3,224 +3,180 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>NLCS Jeju | Curiosity Drive</title>
+  <title>NLCS Jeju | Curiosity Drive Live</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"/>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    body { font-family: 'Nunito', sans-serif; background: #f8fafc; color: #002046; margin: 0; overflow-x: hidden; }
-    .teacher-sidebar { background: #002046; color: white; width: 280px; height: 100vh; position: fixed; left: 0; top: 0; z-index: 50; border-right: 1px solid rgba(255,255,255,0.1); }
-    .main-layout { margin-left: 280px; padding: 40px; min-height: 100vh; }
-    .student-layout { margin-left: 0; padding: 0; min-height: 100vh; background: #f0f7ff; }
-    .card { background: white; border-radius: 2.5rem; padding: 2rem; box-shadow: 0 10px 30px rgba(0,32,70,0.05); border: 1px solid #eef2f6; transition: all 0.3s ease; }
-    .card:hover { transform: translateY(-5px); box-shadow: 0 20px 40px rgba(0,32,70,0.1); }
+    body { font-family: 'Nunito', sans-serif; background: #f8fafc; color: #001a33; }
+    .card { border-radius: 2rem; background: white; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px rgba(0,26,51,0.05); transition: all 0.3s ease; }
+    .sidebar { width: 280px; height: 100vh; position: fixed; background: #001a33; color: white; z-index: 50; border-right: 4px solid #78beeb; }
+    .main-content { margin-left: 280px; padding: 40px; }
+    .pillar-box { border-left: 6px solid #78beeb; padding: 1.5rem; background: #f0f9ff; border-radius: 1.5rem; margin-bottom: 1rem; }
+    .journal-input { background: #ffffff; border: 2px solid #e2e8f0; border-radius: 1.5rem; padding: 1.5rem; font-family: 'Nunito', sans-serif; font-weight: 700; width: 100%; min-height: 150px; outline: none; transition: border-color 0.3s; }
     
-    /* Atom Rocket Logo */
-    .atom-container { position: relative; width: 60px; height: 60px; margin: 0 auto; }
+    .logo-box { position: relative; width: 55px; height: 55px; margin: 0 auto; }
     .nucleus { position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; background: #78beeb; border-radius: 50%; transform: translate(-50%, -50%); }
-    .orbit { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 1px solid rgba(120, 190, 235, 0.4); border-radius: 50%; animation: rotate 4s linear infinite; }
-    .orbit:nth-child(3) { animation-duration: 2.5s; transform: rotate(45deg); }
-    .rocket-head { position: absolute; top: -10px; left: 50%; font-size: 20px; transform: translateX(-50%); }
-    @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    
-    .scroll-hide::-webkit-scrollbar { display: none; }
-    .loader { border-top-color: #78beeb; animation: spinner 1.5s linear infinite; }
-    @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .orbit { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 2px solid rgba(120,190,235,0.4); border-radius: 50%; animation: spin 4s linear infinite; }
+    .orbit:nth-child(2) { animation-duration: 2.5s; transform: rotate(45deg); }
+    .rocket { position: absolute; top: -10px; left: 50%; font-size: 20px; transform: translateX(-50%); }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect } = React;
+const { useState } = React;
 
 const CONFIG = {
-  GEMINI_API_KEY: 'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY', // Insert Key Here
-  CLASSES: ['5A','5B','5C','5D','5E','6A','6B','6C','6D','6E']
+  API_KEY: 'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY',
+  TOPIC: "Electrical Circuits & Resistance"
 };
 
 function App() {
   const [appMode, setAppMode] = useState('TEACHER'); 
-  const [view, setView] = useState('DASHBOARD'); // DASHBOARD, TEXTBOOK, LAB, QUIZ
-  const [selectedClass, setSelectedClass] = useState("5A");
+  const [activeTab, setActiveTab] = useState('DASHBOARD');
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [journalContent, setJournalContent] = useState("");
   const [loading, setLoading] = useState(false);
-  const [aiContent, setAiContent] = useState(null);
+  const [report, setReport] = useState(null);
 
-  // Mock Data for Teacher Portal
   const students = [
-    { id: 1, name: "Min-Jun Park", content: 82, comm: 65, working: 90 },
-    { id: 2, name: "Sophia Lee", content: 45, comm: 30, working: 55 },
-    { id: 3, name: "Ji-Woo Choi", content: 95, comm: 92, working: 88 }
+    { id: 1, name: "Ji-Min Kim", content: 88, comm: 65, working: 92 },
+    { id: 2, name: "Alex Harrison", content: 42, comm: 58, working: 35 },
+    { id: 3, name: "Sora Park", content: 75, comm: 90, working: 68 }
   ];
 
-  const callAI = async (promptType, studentData = null) => {
+  const callAI = async (prompt, type) => {
     setLoading(true);
-    let prompt = "";
-    
-    if (promptType === 'TEXTBOOK') {
-      prompt = "Generate a Year 6 Science textbook chapter on The Circulatory System for NLCS Jeju. Include key vocabulary. Format: JSON {title, intro, sections:[{h, p}]}";
-    } else if (promptType === 'ANALYSIS') {
-      prompt = `Analyze student: ${studentData.name}. Scores: Content ${studentData.content}%, Comm ${studentData.comm}%, Working Sci ${studentData.working}%. Provide strengths, gaps, and a 'Challenge Accelerator' mission. JSON format.`;
-    }
-
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${CONFIG.API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } })
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        })
       });
-      const data = await res.json();
-      const cleanJson = JSON.parse(data.candidates[0].content.parts[0].text);
-      setAiContent(cleanJson);
+      const data = await response.json();
+      const result = JSON.parse(data.candidates[0].content.parts[0].text);
+      setReport(result);
     } catch (e) {
       console.error("AI Error:", e);
-      // Fallback for demo if API fails
-      setAiContent({ 
-        title: "Circulatory System", gaps: "Vocabulary precision", 
-        strengths: "Excellent methodology", nextStep: "Advanced Lab",
-        sections: [{h: "The Heart", p: "The heart is a vital organ..."}]
-      });
+      setReport({ error: "Check API connection." });
     }
     setLoading(false);
   };
 
   const Logo = () => (
-    <div className="atom-container">
-      <div className="nucleus"></div>
-      <div className="orbit"><span className="rocket-head">🚀</span></div>
-      <div className="orbit"></div>
-      <div className="orbit"></div>
-    </div>
+    <div className="logo-box"><div className="nucleus"></div><div className="orbit"><span className="rocket">🚀</span></div><div className="orbit"></div></div>
   );
 
-  // --- TEACHER HUB ---
   if (appMode === 'TEACHER') return (
     <div className="flex">
-      <aside className="teacher-sidebar p-8 flex flex-col">
-        <Logo /><h2 className="text-center font-black text-[10px] tracking-widest uppercase mt-4 mb-10">Faculty Portal</h2>
-        <div className="flex-1 overflow-y-auto scroll-hide space-y-1">
-          {CONFIG.CLASSES.map(c => (
-            <button key={c} onClick={() => setSelectedClass(c)} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm ${selectedClass === c ? 'bg-[#78beeb] text-[#002046]' : 'opacity-50'}`}>Class {c}</button>
-          ))}
+      <aside className="sidebar p-8 flex flex-col">
+        <Logo /><h2 className="text-center font-black text-[10px] tracking-widest mt-4 uppercase">Faculty Hub</h2>
+        <div className="mt-12 flex-1 space-y-2">
+           {['5A','5B','6A','6B'].map(c => <button key={c} className="w-full text-left px-6 py-3 rounded-xl hover:bg-white/10 font-bold text-sm">Class {c}</button>)}
         </div>
-        <button onClick={() => {setAppMode('STUDENT'); setView('DASHBOARD');}} className="mt-6 w-full py-4 bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase shadow-xl">Student View 👁️</button>
+        <button onClick={() => setAppMode('STUDENT')} className="w-full py-4 bg-[#78beeb] text-[#001a33] rounded-2xl font-black text-xs uppercase shadow-xl hover:scale-105 transition-all">Student View 👁️</button>
       </aside>
 
-      <main className="main-layout flex-1">
-        <div className="flex justify-between items-center mb-10">
-           <h1 className="text-4xl font-black">Analytics: Class {selectedClass}</h1>
-           <div className="bg-white px-6 py-2 rounded-full shadow-sm border font-bold">Academic Lead</div>
-        </div>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-           <div className="space-y-4">
-              {students.map(s => (
-                <div key={s.id} onClick={() => callAI('ANALYSIS', s)} className={`card cursor-pointer ${selectedStudent?.id === s.id ? 'border-[#78beeb] ring-1 ring-[#78beeb]' : ''}`}>
-                   <p className="font-black">{s.name}</p>
-                   <div className="flex gap-1 mt-2"><div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden"><div style={{width:`${s.content}%`}} className="h-full bg-[#002046]"></div></div></div>
-                </div>
-              ))}
-           </div>
-           <div className="lg:col-span-2">
-              {loading ? <div className="loader w-12 h-12 border-4 rounded-full mx-auto mt-20"></div> : aiContent && (
-                <div className="space-y-6 animate-in fade-in">
-                   <div className="card border-l-8 border-orange-400">
-                      <h4 className="font-black text-xs uppercase text-orange-400 mb-2 tracking-widest">Scientific Gaps</h4>
-                      <p className="font-bold text-slate-600">{aiContent.gaps}</p>
-                   </div>
-                   <div className="card border-l-8 border-emerald-400">
-                      <h4 className="font-black text-xs uppercase text-emerald-400 mb-2 tracking-widest">Next Steps</h4>
-                      <p className="font-bold text-slate-600">{aiContent.nextStep || "Extend into KS3 Friction variables."}</p>
-                   </div>
-                </div>
-              )}
-           </div>
+      <main className="main-content flex-1">
+        <h1 className="text-4xl font-black mb-10">Scientific Growth Analytics</h1>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          <div className="lg:col-span-1 space-y-4">
+             {students.map(s => (
+               <div key={s.id} onClick={() => {
+                 setSelectedStudent(s);
+                 callAI(`Analyze student: ${s.name}. Metrics: Content ${s.content}%, Communication ${s.comm}%, Working Scientifically ${s.working}%. Topic: ${CONFIG.TOPIC}. Return JSON: {"overall": "", "pillar1": "content feedback", "pillar2": "comm feedback", "pillar3": "working scientifically feedback", "accelerator": "extension task", "nextStep": "action"}`, 'TEACHER');
+               }} className={`card !p-6 cursor-pointer ${selectedStudent?.id === s.id ? 'border-[#78beeb] ring-2 ring-[#78beeb]' : ''}`}>
+                 <p className="font-black text-lg">{s.name}</p>
+               </div>
+             ))}
+          </div>
+          <div className="lg:col-span-3">
+             {loading ? <div className="card h-64 flex items-center justify-center animate-pulse">Consulting Gemini AI...</div> : report && (
+               <div className="space-y-6">
+                  <div className="card bg-[#001a33] text-white p-8">
+                    <h2 className="text-3xl font-black mb-2">{selectedStudent.name}</h2>
+                    <p className="text-white/70 italic font-bold border-l-4 border-[#78beeb] pl-4">{report.overall}</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="pillar-box"><h4 className="text-[10px] font-black text-blue-500 uppercase mb-2">1. Content</h4><p className="text-sm font-bold text-slate-700 leading-relaxed">{report.pillar1}</p></div>
+                    <div className="pillar-box border-l-orange-400"><h4 className="text-[10px] font-black text-orange-400 uppercase mb-2">2. Comm.</h4><p className="text-sm font-bold text-slate-700 leading-relaxed">{report.pillar2}</p></div>
+                    <div className="pillar-box border-l-emerald-400"><h4 className="text-[10px] font-black text-emerald-400 uppercase mb-2">3. Method</h4><p className="text-sm font-bold text-slate-700 leading-relaxed">{report.pillar3}</p></div>
+                  </div>
+                  <div className="card bg-gradient-to-r from-[#001a33] to-[#1e3a8a] text-white">
+                    <h4 className="text-xs font-black uppercase text-[#78beeb] mb-2">Challenge Accelerator</h4>
+                    <p className="font-bold text-lg">{report.accelerator}</p>
+                  </div>
+               </div>
+             )}
+          </div>
         </div>
       </main>
     </div>
   );
 
-  // --- STUDENT HUB ---
   return (
-    <div className="student-layout min-h-screen pb-20">
-      <nav className="p-8 flex justify-between items-center">
-        <button onClick={() => setAppMode('TEACHER')} className="px-6 py-2 bg-[#002046] text-white rounded-full font-black text-[10px] uppercase">← Return to Hub</button>
-        <div className="font-black text-[#002046]">Year 6 Science Mission</div>
+    <div className="min-h-screen bg-[#f0f7ff] pb-20">
+      <nav className="p-8 flex justify-between items-center max-w-7xl mx-auto">
+        <button onClick={() => setAppMode('TEACHER')} className="px-6 py-2 bg-[#001a33] text-white rounded-full font-black text-[10px] uppercase shadow-lg">← Faculty</button>
+        <div className="flex items-center gap-4"><Logo /><h1 className="text-2xl font-black tracking-tighter text-[#001a33]">Curiosity Drive</h1></div>
       </nav>
 
-      {view === 'DASHBOARD' ? (
-        <div className="max-w-6xl mx-auto px-6">
-           <header className="text-center mt-10 mb-20">
-              <Logo />
-              <h1 className="text-7xl font-black text-[#002046] mt-8 mb-4 tracking-tighter">Curiosity Drive</h1>
-              <p className="text-xl font-bold text-slate-400">Junior School Inquiry Portal</p>
-           </header>
-
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
-              <div onClick={() => {setView('TEXTBOOK'); callAI('TEXTBOOK');}} className="card text-center cursor-pointer hover:bg-[#78beeb] group">
-                 <span className="text-6xl mb-4 block">📖</span>
-                 <h3 className="text-2xl font-black group-hover:text-white">Theory</h3>
+      <main className="max-w-6xl mx-auto px-6">
+        {activeTab === 'DASHBOARD' ? (
+          <div>
+            <header className="text-center mb-16 mt-10">
+              <h1 className="text-7xl font-black text-[#001a33] tracking-tighter mb-4">Science Mission</h1>
+              <p className="text-xl font-bold text-slate-400">Current Inquiry: {CONFIG.TOPIC}</p>
+            </header>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
+              <div onClick={() => setActiveTab('LAB')} className="card text-center bg-[#001a33] text-white cursor-pointer hover:scale-105 transition-all">
+                <span className="text-6xl mb-6 block">🧪</span><h3 className="text-2xl font-black">The Lab</h3>
               </div>
-              <div onClick={() => setView('LAB')} className="card text-center cursor-pointer bg-[#002046] text-white">
-                 <span className="text-6xl mb-4 block">🧪</span>
-                 <h3 className="text-2xl font-black">Interactive Lab</h3>
+              <div onClick={() => {
+                setActiveTab('TEXTBOOK');
+                callAI(`Generate a Year 6 textbook chapter for ${CONFIG.TOPIC}. JSON: {"title": "", "sections": [{"h": "", "p": ""}]}`, 'TEXT');
+              }} className="card text-center cursor-pointer hover:scale-105 transition-all">
+                <span className="text-6xl mb-6 block">📖</span><h3 className="text-2xl font-black">Theory</h3>
               </div>
-              <div onClick={() => setView('QUIZ')} className="card text-center cursor-pointer hover:bg-[#78beeb] group">
-                 <span className="text-6xl mb-4 block">🎯</span>
-                 <h3 className="text-2xl font-black group-hover:text-white">Mastery</h3>
+              <div onClick={() => setActiveTab('QUIZ')} className="card text-center cursor-pointer hover:scale-105 transition-all">
+                <span className="text-6xl mb-6 block">🎯</span><h3 className="text-2xl font-black">Mastery</h3>
               </div>
-           </div>
-
-           {/* STUDENT GAP ANALYSIS SECTION */}
-           <section className="mt-20">
-              <h2 className="text-3xl font-black mb-10 border-b-2 border-slate-200 pb-4">Scientific Progress Report</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                 <div className="card border-t-8 border-blue-500">
-                    <h4 className="font-black text-[10px] text-blue-500 uppercase mb-4">Content Mastery</h4>
-                    <p className="text-sm font-bold text-slate-500 leading-relaxed">"Focus on the distinction between mass and weight during the friction experiments."</p>
-                 </div>
-                 <div className="card border-t-8 border-orange-400">
-                    <h4 className="font-black text-[10px] text-orange-400 uppercase mb-4">Scientific Communication</h4>
-                    <p className="text-sm font-bold text-slate-500 leading-relaxed">"Excellent use of keywords! Next step: use 'Inertia' in your evaluation."</p>
-                 </div>
-                 <div className="card border-t-8 border-emerald-500">
-                    <h4 className="font-black text-[10px] text-emerald-500 uppercase mb-4">Working Scientifically</h4>
-                    <p className="text-sm font-bold text-slate-500 leading-relaxed">"Identified independent variables correctly. Try improving your graph scaling."</p>
-                 </div>
-              </div>
-
-              {/* CHALLENGE ACCELERATOR */}
-              <div className="mt-12 p-12 bg-gradient-to-br from-[#002046] to-[#1e3a8a] rounded-[3.5rem] text-white relative overflow-hidden shadow-2xl">
-                 <div className="absolute top-0 right-0 p-10 opacity-10 text-9xl">🚀</div>
-                 <h3 className="text-[10px] font-black uppercase tracking-[0.4em] mb-4 text-[#78beeb]">Extension Mission</h3>
-                 <h4 className="text-4xl font-black mb-6">Quantum Challenge: Gravity in a Vacuum</h4>
-                 <p className="text-lg opacity-80 max-w-2xl mb-8 leading-relaxed">Design an experiment to prove if a feather and a hammer fall at the same speed on the Moon. What equipment would you need?</p>
-                 <button className="px-8 py-3 bg-white text-[#002046] rounded-xl font-black text-xs uppercase shadow-lg">Start Challenge ➔</button>
-              </div>
-           </section>
-        </div>
-      ) : (
-        <div className="max-w-4xl mx-auto px-6 py-10 animate-in slide-in-from-bottom-10">
-           <button onClick={() => setView('DASHBOARD')} className="mb-10 text-slate-400 font-black uppercase text-xs">← Back to Dashboard</button>
-           {loading ? <div className="loader w-12 h-12 border-4 rounded-full mx-auto"></div> : (
-             <div className="card p-12">
-                {view === 'TEXTBOOK' && aiContent && (
-                  <>
-                    <h1 className="text-5xl font-black mb-6 italic">{aiContent.title}</h1>
-                    {aiContent.sections.map((s, i) => (
-                      <div key={i} className="mb-8"><h2 className="text-2xl font-black mb-2">{s.h}</h2><p className="text-lg text-slate-600 leading-relaxed">{s.p}</p></div>
-                    ))}
-                  </>
-                )}
-                {view === 'LAB' && <iframe src="https://phet.colorado.edu/sims/html/forces-and-motion-basics/latest/forces-and-motion-basics_en.html" className="w-full h-[500px] rounded-2xl"></iframe>}
-                {view === 'QUIZ' && <div className="text-center py-20"><h2 className="text-3xl font-black">AI Assessment Loading...</h2><button className="mt-6 px-10 py-4 bg-[#002046] text-white rounded-2xl font-black">Begin Quiz</button></div>}
-             </div>
-           )}
-        </div>
-      )}
+            </div>
+            <h2 className="text-3xl font-black mb-8 border-b-4 border-[#78beeb] inline-block pb-2">Your Scientific Pulse</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="pillar-box"><h4 className="text-[10px] font-black text-blue-500 uppercase mb-2">Content</h4><p className="text-sm font-bold text-slate-500 italic">"Focus on the difference between current and voltage."</p></div>
+                <div className="pillar-box border-l-orange-400"><h4 className="text-[10px] font-black text-orange-400 uppercase mb-2">Communication</h4><p className="text-sm font-bold text-slate-500 italic">"Excellent keyword usage today!"</p></div>
+                <div className="pillar-box border-l-emerald-400"><h4 className="text-[10px] font-black text-emerald-400 uppercase mb-2">Working Scientifically</h4><p className="text-sm font-bold text-slate-500 italic">"Identified variables perfectly."</p></div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-10 animate-in slide-in-from-bottom-10">
+             <button onClick={() => setActiveTab('DASHBOARD')} className="mb-6 font-black text-slate-400 uppercase text-xs">← Exit</button>
+             {activeTab === 'LAB' && (
+               <div className="space-y-8">
+                  <div className="h-[550px] rounded-[3rem] overflow-hidden shadow-2xl border-8 border-[#001a33]">
+                    <iframe src="https://phet.colorado.edu/sims/html/circuit-construction-kit-dc/latest/circuit-construction-kit-dc_en.html" className="w-full h-full"></iframe>
+                  </div>
+                  <div className="card !p-12">
+                    <h3 className="text-2xl font-black mb-6">Scientific Journal</h3>
+                    <textarea className="journal-input" placeholder="What happens when you add a second bulb?" value={journalContent} onChange={(e) => setJournalContent(e.target.value)}></textarea>
+                    <button onClick={() => callAI(`Analyze this student conclusion: "${journalContent}". Provide feedback based on Content, Communication, and Working Scientifically. JSON: {"overall": "", "pillar1": "...", "pillar2": "...", "pillar3": "...", "accelerator": "", "nextStep": ""}`, 'STUDENT')} className="mt-6 w-full py-5 bg-[#001a33] text-[#78beeb] rounded-2xl font-black uppercase text-sm shadow-xl">Analyze My Journal</button>
+                    {report && <div className="mt-8 p-8 bg-blue-50 rounded-3xl border-2 border-[#78beeb]"><p className="font-bold text-slate-600 italic">💡 AI Feedback: {report.pillar2}</p></div>}
+                  </div>
+               </div>
+             )}
+             {activeTab === 'TEXTBOOK' && report && <div className="card !p-12"><h2 className="text-4xl font-black mb-6 italic">{report.title}</h2>{report.sections?.map(s => <div key={s.h} className="mb-8"><h3 className="text-2xl font-black mb-2">{s.h}</h3><p className="text-lg text-slate-600 leading-relaxed font-bold">{s.p}</p></div>)}</div>}
+          </div>
+        )}
+      </main>
     </div>
   );
 }
