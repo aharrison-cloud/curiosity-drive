@@ -5,164 +5,191 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>NLCS Jeju | Curiosity Drive</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"/>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://accounts.google.com/gsi/client"></script>
   <style>
-    body { font-family: 'Nunito', sans-serif; background: #f0f4f8; color: #002046; }
-    .pillar-card { transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; border: 2px solid transparent; }
-    .pillar-card:hover { transform: translateY(-12px); border-color: #78beeb; box-shadow: 0 25px 50px -12px rgba(0, 32, 70, 0.15); }
-    .glass-nav { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(15px); border-bottom: 1px solid rgba(0,32,70,0.1); }
-    .teacher-gradient { background: linear-gradient(135deg, #002046 0%, #1e3a8a 100%); }
-    .ship-icon { display: inline-block; width: 40px; height: 40px; background: #002046; clip-path: polygon(50% 0%, 0% 100%, 100% 100%); }
+    body { font-family: 'Nunito', sans-serif; background: #f8fafc; color: #002046; }
+    .teacher-sidebar { background: #002046; color: white; width: 300px; height: 100vh; position: fixed; }
+    .main-content { margin-left: 300px; padding: 40px; }
+    .card { background: white; border-radius: 2rem; padding: 2rem; box-shadow: 0 4px 20px rgba(0,32,70,0.05); border: 1px solid #e2e8f0; }
+    .status-pill { padding: 4px 12px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+    
+    /* Atom Rocket Logo */
+    .atom-container { position: relative; width: 50px; height: 50px; margin: 0 auto; }
+    .nucleus { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; background: #78beeb; border-radius: 50%; transform: translate(-50%, -50%); }
+    .orbit { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 1px solid rgba(120, 190, 235, 0.3); border-radius: 50%; animation: rotate 3s linear infinite; }
+    .orbit:nth-child(2) { transform: rotate(60deg); }
+    .rocket-head { position: absolute; top: -8px; left: 50%; font-size: 16px; transform: translateX(-50%); }
+    @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState } = React;
+const { useState, useEffect } = React;
 
 const CONFIG = {
-  GOOGLE_CLIENT_ID: '594310820254-vtdhfitril7tqh6csj9vn5uakpj3s7fm.apps.googleusercontent.com',
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxdsoT55lqh1mHvi7EMWBBM02ARK76FVSQmzpK1k3wq5ke02UvSSD1SdEEdUtKRswaw7g/exec',
   GEMINI_API_KEY: 'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY',
   TEACHER_DOMAIN: '@nlcsjeju.kr'
 };
 
-function App() {
-  const [user, setUser] = useState(null);
-  const [view, setView] = useState('SIGNIN');
-  const [activeTopic, setActiveTopic] = useState({ name: 'Forces & Friction', year: 5 });
-  const [isStudentPreview, setIsStudentPreview] = useState(false);
+const MOCK_DATA = {
+  "5A": [
+    { id: 1, name: "Ji-hoon Lee", score: 85, lastTopic: "Forces", journals: 4 },
+    { id: 2, name: "Sarah Park", score: 62, lastTopic: "Circulation", journals: 2 },
+    { id: 3, name: "Alex Kim", score: 92, lastTopic: "Light", journals: 7 }
+  ],
+  "6B": [
+    { id: 4, name: "Yuna Choi", score: 78, lastTopic: "Space", journals: 5 },
+    { id: 5, name: "Leo Zhang", score: 45, lastTopic: "Light", journals: 1 }
+  ]
+};
 
-  const onLogin = (res) => {
-    const p = JSON.parse(atob(res.credential.split('.')[1]));
-    setUser(p);
-    const isTeacher = p.email.toLowerCase().endsWith(CONFIG.TEACHER_DOMAIN);
-    if (isTeacher) setView('TEACHER_HUB');
-    else setView('DASHBOARD');
+function App() {
+  const [user, setUser] = useState({ name: "Mr. Harrison", email: "aharrison@nlcsjeju.kr" });
+  const [view, setView] = useState('TEACHER_HUB');
+  const [selectedClass, setSelectedClass] = useState("5A");
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [aiInsight, setAiInsight] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const getAIInsight = async (student) => {
+    setLoading(true);
+    setSelectedStudent(student);
+    try {
+      const prompt = `Student: ${student.name}. Current Score: ${student.score}%. Recent Topic: ${student.lastTopic}. 
+      Generate AI Teacher Feedback. JSON format: {"gaps": "", "nextSteps": "", "curiosityLevel": ""}`;
+      
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } })
+      });
+      const data = await res.json();
+      setAiInsight(JSON.parse(data.candidates[0].content.parts[0].text));
+    } catch (e) { console.error(e); }
+    setLoading(false);
   };
 
-  // --- Login Screen ---
-  if (view === 'SIGNIN') return (
-    <div className="min-h-screen flex items-center justify-center bg-[#002046] p-6">
-      <div className="bg-white p-12 rounded-[4rem] text-center shadow-2xl max-w-sm w-full border-b-8 border-[#78beeb]">
-        <div className="ship-icon mb-6"></div>
-        <h1 className="text-3xl font-black mb-2">Curiosity Drive</h1>
-        <p className="text-slate-400 font-bold text-xs tracking-widest mb-10 uppercase">Junior School Science</p>
-        <div id="g-login" ref={r => { if(r && window.google) {
-          window.google.accounts.id.initialize({ client_id: CONFIG.GOOGLE_CLIENT_ID, callback: onLogin });
-          window.google.accounts.id.renderButton(r, {theme:'outline', size:'large', shape:'pill', width: 250});
-        }}}></div>
-      </div>
+  const Logo = () => (
+    <div className="atom-container">
+      <div className="nucleus"></div>
+      <div className="orbit"><span className="rocket-head">🚀</span></div>
+      <div className="orbit"></div>
     </div>
   );
 
-  // --- Teacher Hub (The Starting Point for Staff) ---
-  if (view === 'TEACHER_HUB' && !isStudentPreview) return (
-    <div className="min-h-screen p-8">
-      <nav className="flex justify-between items-center mb-12 glass-nav p-6 rounded-[2.5rem] shadow-sm">
-        <div className="font-black text-2xl flex items-center gap-3">
-          <div className="ship-icon w-8 h-8"></div> Teacher Portal
-        </div>
-        <button onClick={() => setIsStudentPreview(true)} className="px-8 py-3 teacher-gradient text-white rounded-2xl font-black text-sm hover:scale-105 transition-all shadow-lg">
-          Switch to Student View 👁️
-        </button>
-      </nav>
-      
-      <div className="max-w-6xl mx-auto">
-        <h2 className="text-5xl font-black mb-4">Welcome, {user.given_name}</h2>
-        <p className="text-slate-500 font-bold mb-10 text-xl">Monitor science engagement and curiosities.</p>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100">
-            <h4 className="text-xs font-black text-slate-400 uppercase mb-2">Journal Entries</h4>
-            <p className="text-5xl font-black">124</p>
-          </div>
-          <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100 md:col-span-2">
-            <h4 className="text-xs font-black text-slate-400 uppercase mb-2">Scientific Feedback Needed</h4>
-            <div className="mt-4 p-4 bg-orange-50 rounded-2xl text-orange-700 font-bold">● 5 Students awaiting feedback on "Light" module.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  // --- Student Dashboard (Spread out interactive page) ---
   return (
-    <div className="min-h-screen pb-20">
-      {/* Staff Override Bar */}
-      {view === 'TEACHER_HUB' && (
-        <div className="bg-emerald-500 p-2 text-center text-white text-[10px] font-black uppercase tracking-widest sticky top-0 z-[200]">
-          Teacher Preview Mode — <button onClick={() => setIsStudentPreview(false)} className="underline">Back to Hub</button>
+    <div className="flex">
+      {/* SIDEBAR */}
+      <aside className="teacher-sidebar p-8">
+        <Logo />
+        <h1 className="text-center font-black mt-4 text-sm tracking-widest uppercase">Curiosity Drive</h1>
+        
+        <div className="mt-12 space-y-2">
+          <p className="text-[10px] font-black text-slate-500 uppercase px-4">Select Class</p>
+          {Object.keys(MOCK_DATA).map(cls => (
+            <button key={cls} 
+              onClick={() => { setSelectedClass(cls); setSelectedStudent(null); setAiInsight(null); }}
+              className={`w-full text-left px-6 py-3 rounded-2xl font-bold transition-all ${selectedClass === cls ? 'bg-[#78beeb] text-[#002046]' : 'hover:bg-white/5'}`}>
+              Class {cls}
+            </button>
+          ))}
         </div>
-      )}
 
-      <nav className="px-8 py-6 flex justify-between items-center max-w-7xl mx-auto">
-        <div className="flex items-center gap-3 font-black text-xl text-[#002046]">
-          <div className="ship-icon w-6 h-6"></div> Curiosity Drive
+        <div className="absolute bottom-8 left-8 right-8">
+          <button onClick={() => alert("Switching to Student View...")} className="w-full py-4 bg-white/10 rounded-2xl font-black text-xs uppercase border border-white/20 hover:bg-white/20 transition-all">
+            Student Preview 👁️
+          </button>
         </div>
-        <div className="text-right">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Current Mission</p>
-          <p className="font-black text-sm">{activeTopic.name}</p>
-        </div>
-      </nav>
+      </aside>
 
-      <main className="max-w-7xl mx-auto px-8 mt-10">
-        <header className="mb-16">
-          <h1 className="text-6xl font-black text-[#002046] tracking-tight">Interactive Lab</h1>
-          <p className="text-xl text-slate-500 mt-4 font-bold max-w-2xl leading-relaxed">Choose a pillar to begin your scientific inquiry. Follow the drive from theory to practical application.</p>
+      {/* MAIN CONTENT */}
+      <main className="main-content flex-1">
+        <header className="flex justify-between items-center mb-12">
+          <div>
+            <h2 className="text-4xl font-black">Teacher Dashboard</h2>
+            <p className="text-slate-400 font-bold">Inquiry Tracking: Class {selectedClass}</p>
+          </div>
+          <div className="bg-white px-6 py-3 rounded-full border flex items-center gap-4">
+            <div className="w-8 h-8 bg-[#002046] rounded-full"></div>
+            <span className="font-black text-sm">{user.name}</span>
+          </div>
         </header>
 
-        {/* INTERACTIVE GRID: SPREAD ACROSS PAGE */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* PILLAR 1: TEXTBOOK */}
-          <div onClick={() => alert("Loading AI Textbook...")} className="pillar-card bg-white p-12 rounded-[4rem] shadow-xl flex flex-col h-[450px]">
-            <div className="text-6xl mb-8">📖</div>
-            <h2 className="text-3xl font-black mb-4">Scientific Theory</h2>
-            <p className="text-slate-500 font-bold leading-relaxed mb-8 flex-1">Explore custom chapters generated by AI specifically for the Year {activeTopic.year} curriculum.</p>
-            <div className="bg-blue-50 text-blue-600 p-4 rounded-2xl font-black text-center text-xs uppercase tracking-widest">Open Textbook</div>
+          {/* STUDENT LIST */}
+          <div className="lg:col-span-1 space-y-4">
+            <h3 className="font-black text-lg px-2">Student Roster</h3>
+            {MOCK_DATA[selectedClass].map(student => (
+              <div key={student.id} 
+                onClick={() => getAIInsight(student)}
+                className={`card cursor-pointer hover:border-[#78beeb] transition-all !p-6 flex justify-between items-center ${selectedStudent?.id === student.id ? 'ring-2 ring-[#78beeb]' : ''}`}>
+                <div>
+                  <p className="font-black">{student.name}</p>
+                  <p className="text-xs text-slate-400">XP: {student.journals * 250}</p>
+                </div>
+                <div className={`status-pill ${student.score > 80 ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
+                  {student.score}%
+                </div>
+              </div>
+            ))}
           </div>
 
-          {/* PILLAR 2: PRACTICAL LAB */}
-          <div onClick={() => alert("Launching Simulation...")} className="pillar-card bg-[#002046] p-12 rounded-[4rem] shadow-xl flex flex-col h-[450px] text-white">
-            <div className="text-6xl mb-8">🧪</div>
-            <h2 className="text-3xl font-black mb-4 text-[#78beeb]">Interactive Lab</h2>
-            <p className="text-white/60 font-bold leading-relaxed mb-8 flex-1">Jump into PhET simulations and digital experiments to test your hypotheses in real-time.</p>
-            <div className="bg-white/10 text-white p-4 rounded-2xl font-black text-center text-xs uppercase tracking-widest border border-white/20">Launch Lab</div>
+          {/* AI ANALYTICS PANEL */}
+          <div className="lg:col-span-2">
+            {!selectedStudent ? (
+              <div className="card h-full flex flex-col items-center justify-center text-slate-300 border-dashed border-2">
+                <div className="text-6xl mb-4">🔍</div>
+                <p className="font-bold">Select a student to generate AI insights</p>
+              </div>
+            ) : (
+              <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+                <div className="card !bg-[#002046] text-white">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-3xl font-black">{selectedStudent.name}</h3>
+                      <p className="text-[#78beeb] font-bold">Current Focus: {selectedStudent.lastTopic}</p>
+                    </div>
+                    <div className="text-right">
+                       <p className="text-[10px] font-black uppercase opacity-60">Engagement</p>
+                       <p className="text-2xl font-black">High 🔥</p>
+                    </div>
+                  </div>
+                </div>
+
+                {loading ? (
+                  <div className="card flex justify-center py-20">
+                    <div className="animate-spin rounded-full h-10 w-10 border-4 border-[#78beeb] border-t-transparent"></div>
+                  </div>
+                ) : aiInsight && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="card border-l-8 border-orange-400">
+                      <h4 className="font-black text-orange-500 uppercase text-xs mb-4 tracking-widest">⚠️ Gaps in Knowledge</h4>
+                      <p className="text-slate-600 leading-relaxed font-bold">{aiInsight.gaps}</p>
+                    </div>
+                    <div className="card border-l-8 border-emerald-400">
+                      <h4 className="font-black text-emerald-500 uppercase text-xs mb-4 tracking-widest">🚀 Recommended Next Steps</h4>
+                      <p className="text-slate-600 leading-relaxed font-bold">{aiInsight.nextSteps}</p>
+                    </div>
+                    <div className="card md:col-span-2 flex items-center justify-between">
+                      <div>
+                        <h4 className="font-black text-slate-400 uppercase text-xs mb-1">Curiosity Level</h4>
+                        <p className="text-xl font-black">{aiInsight.curiosityLevel}</p>
+                      </div>
+                      <button className="bg-[#002046] text-white px-8 py-3 rounded-2xl font-black text-xs uppercase shadow-lg">Push Extension Mission</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* PILLAR 3: QUIZ & FEEDBACK */}
-          <div onClick={() => alert("Starting Assessment...")} className="pillar-card bg-white p-12 rounded-[4rem] shadow-xl flex flex-col h-[450px]">
-            <div className="text-6xl mb-8">🎯</div>
-            <h2 className="text-3xl font-black mb-4">Mastery Check</h2>
-            <p className="text-slate-500 font-bold leading-relaxed mb-8 flex-1">Test your content knowledge, scientific communication, and working scientifically skills.</p>
-            <div className="bg-slate-100 text-slate-400 p-4 rounded-2xl font-black text-center text-xs uppercase tracking-widest">Start Quiz</div>
-          </div>
-
-        </div>
-
-        {/* BOTTOM SECTION: CURIOSITY ACCELERATORS */}
-        <div className="mt-20 border-t-2 border-slate-200 pt-16">
-          <div className="flex items-center gap-4 mb-10">
-            <span className="bg-[#78beeb] text-[#002046] px-4 py-1 rounded-full font-black text-[10px] uppercase">New Suggestions</span>
-            <h3 className="text-3xl font-black">Curiosity Accelerators</h3>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-emerald-50 p-10 rounded-[3.5rem] border-2 border-emerald-100">
-              <h4 className="text-emerald-600 font-black text-xl mb-3">🚀 Extension Mission</h4>
-              <p className="text-emerald-900/60 font-bold">Complete the quiz with 100% to unlock the "Super-Fluid" deep dive experiment.</p>
-            </div>
-            <div className="bg-amber-50 p-10 rounded-[3.5rem] border-2 border-amber-100">
-              <h4 className="text-amber-600 font-black text-xl mb-3">🩹 Gap-Fill Activity</h4>
-              <p className="text-amber-900/60 font-bold">Need a refresh on terminology? Check out the "Vocab Vault" for this week's keywords.</p>
-            </div>
-          </div>
         </div>
       </main>
     </div>
