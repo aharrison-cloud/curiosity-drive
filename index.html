@@ -5,79 +5,85 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>NLCS Jeju | Curiosity Drive</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet"/>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://accounts.google.com/gsi/client"></script>
   <style>
-    body { font-family: 'Nunito', sans-serif; background: #f8fafc; color: #002046; transition: all 0.3s ease; }
-    .teacher-sidebar { background: #002046; color: white; width: 280px; height: 100vh; position: fixed; left: 0; top: 0; z-index: 50; }
+    body { font-family: 'Nunito', sans-serif; background: #f8fafc; color: #002046; margin: 0; overflow-x: hidden; }
+    .teacher-sidebar { background: #002046; color: white; width: 280px; height: 100vh; position: fixed; left: 0; top: 0; z-index: 50; border-right: 1px solid rgba(255,255,255,0.1); }
     .main-layout { margin-left: 280px; padding: 40px; min-height: 100vh; }
-    .student-layout { margin-left: 0; padding: 20px; min-height: 100vh; background: #f0f7ff; }
-    .card { background: white; border-radius: 2rem; padding: 1.5rem; box-shadow: 0 4px 20px rgba(0,32,70,0.05); border: 1px solid #e2e8f0; }
+    .student-layout { margin-left: 0; padding: 0; min-height: 100vh; background: #f0f7ff; }
+    .card { background: white; border-radius: 2.5rem; padding: 2rem; box-shadow: 0 10px 30px rgba(0,32,70,0.05); border: 1px solid #eef2f6; transition: all 0.3s ease; }
+    .card:hover { transform: translateY(-5px); box-shadow: 0 20px 40px rgba(0,32,70,0.1); }
     
     /* Atom Rocket Logo */
-    .atom-container { position: relative; width: 50px; height: 50px; margin: 0 auto; }
-    .nucleus { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; background: #78beeb; border-radius: 50%; transform: translate(-50%, -50%); }
-    .orbit { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 1px solid rgba(120, 190, 235, 0.3); border-radius: 50%; animation: rotate 4s linear infinite; }
-    .orbit:nth-child(2) { transform: rotate(60deg); }
-    .rocket-head { position: absolute; top: -8px; left: 50%; font-size: 16px; transform: translateX(-50%); }
+    .atom-container { position: relative; width: 60px; height: 60px; margin: 0 auto; }
+    .nucleus { position: absolute; top: 50%; left: 50%; width: 12px; height: 12px; background: #78beeb; border-radius: 50%; transform: translate(-50%, -50%); }
+    .orbit { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 1px solid rgba(120, 190, 235, 0.4); border-radius: 50%; animation: rotate 4s linear infinite; }
+    .orbit:nth-child(3) { animation-duration: 2.5s; transform: rotate(45deg); }
+    .rocket-head { position: absolute; top: -10px; left: 50%; font-size: 20px; transform: translateX(-50%); }
     @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     
     .scroll-hide::-webkit-scrollbar { display: none; }
+    .loader { border-top-color: #78beeb; animation: spinner 1.5s linear infinite; }
+    @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useMemo } = React;
+const { useState, useEffect } = React;
 
 const CONFIG = {
-  GEMINI_API_KEY: 'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY',
-  TEACHER_DOMAIN: '@nlcsjeju.kr'
+  GEMINI_API_KEY: 'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY', // Insert Key Here
+  CLASSES: ['5A','5B','5C','5D','5E','6A','6B','6C','6D','6E']
 };
 
-// Generate Classes 5A-E and 6A-E
-const CLASSES = ['5A','5B','5C','5D','5E','6A','6B','6C','6D','6E'];
-
-// Detailed Mock Student Records
-const MOCK_DB = CLASSES.reduce((acc, cls) => {
-  acc[cls] = [
-    { id: Math.random(), name: "Ji-Min Kim", content: 88, communication: 70, workingSci: 92, lastActive: "2 hours ago" },
-    { id: Math.random(), name: "Chloe Park", content: 42, communication: 55, workingSci: 30, lastActive: "1 day ago" },
-    { id: Math.random(), name: "Thomas Row", content: 95, communication: 98, workingSci: 85, lastActive: "Just now" }
-  ];
-  return acc;
-}, {});
-
 function App() {
-  const [user, setUser] = useState({ name: "Science Lead", email: "lead@nlcsjeju.kr" });
-  const [appMode, setAppMode] = useState('TEACHER'); // TEACHER or STUDENT
+  const [appMode, setAppMode] = useState('TEACHER'); 
+  const [view, setView] = useState('DASHBOARD'); // DASHBOARD, TEXTBOOK, LAB, QUIZ
   const [selectedClass, setSelectedClass] = useState("5A");
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [aiAnalysis, setAiAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [aiContent, setAiContent] = useState(null);
 
-  const runAIAnalysis = async (student) => {
+  // Mock Data for Teacher Portal
+  const students = [
+    { id: 1, name: "Min-Jun Park", content: 82, comm: 65, working: 90 },
+    { id: 2, name: "Sophia Lee", content: 45, comm: 30, working: 55 },
+    { id: 3, name: "Ji-Woo Choi", content: 95, comm: 92, working: 88 }
+  ];
+
+  const callAI = async (promptType, studentData = null) => {
     setLoading(true);
-    setSelectedStudent(student);
+    let prompt = "";
+    
+    if (promptType === 'TEXTBOOK') {
+      prompt = "Generate a Year 6 Science textbook chapter on The Circulatory System for NLCS Jeju. Include key vocabulary. Format: JSON {title, intro, sections:[{h, p}]}";
+    } else if (promptType === 'ANALYSIS') {
+      prompt = `Analyze student: ${studentData.name}. Scores: Content ${studentData.content}%, Comm ${studentData.comm}%, Working Sci ${studentData.working}%. Provide strengths, gaps, and a 'Challenge Accelerator' mission. JSON format.`;
+    }
+
     try {
-      const prompt = `Analyze this NLCS Junior Scientist: 
-      Name: ${student.name}. 
-      Scores: Content(${student.content}%), Scientific Communication(${student.communication}%), Working Scientifically(${student.workingSci}%).
-      Provide a professional report in JSON: 
-      {"strengths": "", "gaps": "", "contentAdvice": "", "commAdvice": "", "workingSciAdvice": "", "nextStep": ""}`;
-      
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } })
       });
       const data = await res.json();
-      setAiAnalysis(JSON.parse(data.candidates[0].content.parts[0].text));
-    } catch (e) { setAiAnalysis({ gaps: "Analysis Error. Check API Key." }); }
+      const cleanJson = JSON.parse(data.candidates[0].content.parts[0].text);
+      setAiContent(cleanJson);
+    } catch (e) {
+      console.error("AI Error:", e);
+      // Fallback for demo if API fails
+      setAiContent({ 
+        title: "Circulatory System", gaps: "Vocabulary precision", 
+        strengths: "Excellent methodology", nextStep: "Advanced Lab",
+        sections: [{h: "The Heart", p: "The heart is a vital organ..."}]
+      });
+    }
     setLoading(false);
   };
 
@@ -86,148 +92,135 @@ function App() {
       <div className="nucleus"></div>
       <div className="orbit"><span className="rocket-head">🚀</span></div>
       <div className="orbit"></div>
+      <div className="orbit"></div>
     </div>
   );
 
-  // --- TEACHER VIEW ---
+  // --- TEACHER HUB ---
   if (appMode === 'TEACHER') return (
-    <div className="flex bg-[#f8fafc]">
-      <aside className="teacher-sidebar p-6 flex flex-col">
-        <Logo />
-        <h2 className="text-center font-black text-[10px] tracking-[0.3em] uppercase mt-4 mb-8">Curiosity Drive</h2>
-        
+    <div className="flex">
+      <aside className="teacher-sidebar p-8 flex flex-col">
+        <Logo /><h2 className="text-center font-black text-[10px] tracking-widest uppercase mt-4 mb-10">Faculty Portal</h2>
         <div className="flex-1 overflow-y-auto scroll-hide space-y-1">
-          <p className="text-[10px] font-black text-slate-500 uppercase px-4 mb-2">Academic Year 2026</p>
-          {CLASSES.map(cls => (
-            <button key={cls} 
-              onClick={() => { setSelectedClass(cls); setSelectedStudent(null); setAiAnalysis(null); }}
-              className={`w-full text-left px-5 py-3 rounded-xl font-bold text-sm transition-all ${selectedClass === cls ? 'bg-[#78beeb] text-[#002046]' : 'hover:bg-white/5 opacity-60'}`}>
-              Class {cls}
-            </button>
+          {CONFIG.CLASSES.map(c => (
+            <button key={c} onClick={() => setSelectedClass(c)} className={`w-full text-left px-4 py-2 rounded-xl font-bold text-sm ${selectedClass === c ? 'bg-[#78beeb] text-[#002046]' : 'opacity-50'}`}>Class {c}</button>
           ))}
         </div>
-
-        <button onClick={() => setAppMode('STUDENT')} className="mt-6 w-full py-4 bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase shadow-lg hover:bg-emerald-400 transition-all">
-          Enter Student View 👁️
-        </button>
+        <button onClick={() => {setAppMode('STUDENT'); setView('DASHBOARD');}} className="mt-6 w-full py-4 bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase shadow-xl">Student View 👁️</button>
       </aside>
 
       <main className="main-layout flex-1">
-        <header className="flex justify-between items-start mb-10">
-          <div>
-            <h1 className="text-4xl font-black text-[#002046]">Faculty Dashboard</h1>
-            <p className="text-slate-400 font-bold mt-1">Viewing Analytics for Class {selectedClass}</p>
-          </div>
-          <div className="flex items-center gap-4 bg-white p-3 rounded-3xl border shadow-sm">
-            <div className="text-right"><p className="font-black text-sm">{user.name}</p></div>
-            <div className="w-10 h-10 bg-[#002046] rounded-2xl"></div>
-          </div>
-        </header>
-
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-          <div className="xl:col-span-1 space-y-4">
-            <h3 className="font-black text-slate-400 uppercase text-xs tracking-widest px-2">Student Records</h3>
-            {MOCK_DB[selectedClass].map(s => (
-              <div key={s.id} onClick={() => runAIAnalysis(s)} 
-                className={`card cursor-pointer transition-all hover:scale-[1.02] ${selectedStudent?.id === s.id ? 'ring-2 ring-[#78beeb] bg-blue-50/50' : ''}`}>
-                <div className="flex justify-between items-center">
-                  <p className="font-black text-[#002046]">{s.name}</p>
-                  <span className="text-[10px] font-black text-slate-400 uppercase">{s.lastActive}</span>
+        <div className="flex justify-between items-center mb-10">
+           <h1 className="text-4xl font-black">Analytics: Class {selectedClass}</h1>
+           <div className="bg-white px-6 py-2 rounded-full shadow-sm border font-bold">Academic Lead</div>
+        </div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+           <div className="space-y-4">
+              {students.map(s => (
+                <div key={s.id} onClick={() => callAI('ANALYSIS', s)} className={`card cursor-pointer ${selectedStudent?.id === s.id ? 'border-[#78beeb] ring-1 ring-[#78beeb]' : ''}`}>
+                   <p className="font-black">{s.name}</p>
+                   <div className="flex gap-1 mt-2"><div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden"><div style={{width:`${s.content}%`}} className="h-full bg-[#002046]"></div></div></div>
                 </div>
-                <div className="flex gap-2 mt-3">
-                  <div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden">
-                    <div style={{width: `${s.content}%`}} className="h-full bg-[#002046]"></div>
-                  </div>
-                  <span className="text-[10px] font-black">{s.content}%</span>
+              ))}
+           </div>
+           <div className="lg:col-span-2">
+              {loading ? <div className="loader w-12 h-12 border-4 rounded-full mx-auto mt-20"></div> : aiContent && (
+                <div className="space-y-6 animate-in fade-in">
+                   <div className="card border-l-8 border-orange-400">
+                      <h4 className="font-black text-xs uppercase text-orange-400 mb-2 tracking-widest">Scientific Gaps</h4>
+                      <p className="font-bold text-slate-600">{aiContent.gaps}</p>
+                   </div>
+                   <div className="card border-l-8 border-emerald-400">
+                      <h4 className="font-black text-xs uppercase text-emerald-400 mb-2 tracking-widest">Next Steps</h4>
+                      <p className="font-bold text-slate-600">{aiContent.nextStep || "Extend into KS3 Friction variables."}</p>
+                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="xl:col-span-2">
-            {!selectedStudent ? (
-              <div className="card h-full flex flex-col items-center justify-center border-dashed border-4 border-slate-100 min-h-[500px]">
-                <div className="text-6xl mb-4">🔬</div>
-                <p className="font-black text-slate-300 text-xl">Select a Scientist to Review Records</p>
-              </div>
-            ) : (
-              <div className="space-y-6 animate-in slide-in-from-right-10 duration-500">
-                <div className="card bg-[#002046] text-white p-10 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-10 opacity-10 text-8xl">🧬</div>
-                  <h3 className="text-4xl font-black">{selectedStudent.name}</h3>
-                  <div className="grid grid-cols-3 gap-4 mt-8">
-                    <div className="text-center p-4 bg-white/5 rounded-2xl">
-                      <p className="text-[10px] uppercase opacity-60 font-black mb-1">Content</p>
-                      <p className="text-2xl font-black">{selectedStudent.content}%</p>
-                    </div>
-                    <div className="text-center p-4 bg-white/5 rounded-2xl">
-                      <p className="text-[10px] uppercase opacity-60 font-black mb-1">Communication</p>
-                      <p className="text-2xl font-black">{selectedStudent.communication}%</p>
-                    </div>
-                    <div className="text-center p-4 bg-white/5 rounded-2xl">
-                      <p className="text-[10px] uppercase opacity-60 font-black mb-1">Working Sci.</p>
-                      <p className="text-2xl font-black">{selectedStudent.workingSci}%</p>
-                    </div>
-                  </div>
-                </div>
-
-                {loading ? (
-                  <div className="card flex flex-col items-center py-20">
-                    <div className="w-12 h-12 border-4 border-[#78beeb] border-t-transparent rounded-full animate-spin mb-4"></div>
-                    <p className="font-black text-slate-400 animate-pulse">AI FILTERING RECORDS...</p>
-                  </div>
-                ) : aiAnalysis && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="card border-t-8 border-emerald-400">
-                      <h4 className="font-black text-xs uppercase text-slate-400 mb-4 tracking-widest">Strengths</h4>
-                      <p className="text-sm font-bold text-slate-700 leading-relaxed">{aiAnalysis.strengths}</p>
-                    </div>
-                    <div className="card border-t-8 border-orange-400">
-                      <h4 className="font-black text-xs uppercase text-slate-400 mb-4 tracking-widest">Gaps / Misconceptions</h4>
-                      <p className="text-sm font-bold text-slate-700 leading-relaxed">{aiAnalysis.gaps}</p>
-                    </div>
-                    <div className="card md:col-span-2 bg-blue-50 border-none">
-                      <h4 className="font-black text-xs uppercase text-[#002046] mb-4 tracking-widest">🔭 Specialized AI Pedagogy</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                         <div><p className="text-[10px] font-black text-blue-500 uppercase">On Content</p><p className="text-xs mt-1 italic">"{aiAnalysis.contentAdvice}"</p></div>
-                         <div><p className="text-[10px] font-black text-blue-500 uppercase">On Communication</p><p className="text-xs mt-1 italic">"{aiAnalysis.commAdvice}"</p></div>
-                         <div><p className="text-[10px] font-black text-blue-500 uppercase">On Methodology</p><p className="text-xs mt-1 italic">"{aiAnalysis.workingSciAdvice}"</p></div>
-                      </div>
-                      <div className="mt-8 pt-6 border-t border-blue-100 flex justify-between items-center">
-                        <p className="font-black text-[#002046]">Next Step: <span className="text-blue-600 underline">{aiAnalysis.nextStep}</span></p>
-                        <button className="px-6 py-2 bg-[#002046] text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Push to Student</button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+              )}
+           </div>
         </div>
       </main>
     </div>
   );
 
-  // --- STUDENT VIEW ---
+  // --- STUDENT HUB ---
   return (
-    <div className="student-layout flex flex-col items-center justify-center text-center">
-      <div className="fixed top-6 left-6 z-50">
-        <button onClick={() => setAppMode('TEACHER')} className="px-6 py-3 bg-[#002046] text-white rounded-2xl font-black text-xs uppercase shadow-2xl">
-          ← Return to Faculty Hub
-        </button>
-      </div>
-      <Logo />
-      <h1 className="text-5xl font-black text-[#002046] mt-8 mb-4">Curiosity Drive</h1>
-      <p className="text-slate-500 font-bold text-xl mb-12">Welcome, Scientist. Your missions are ready.</p>
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl w-full px-6">
-        {['Scientific Theory', 'Practical Lab', 'Mastery Check'].map((title, i) => (
-          <div key={i} className="bg-white p-12 rounded-[4rem] shadow-xl border-b-8 border-transparent hover:border-[#78beeb] transition-all cursor-pointer group">
-            <div className="text-6xl mb-6 group-hover:scale-110 transition-transform">{['📖','🧪','🎯'][i]}</div>
-            <h3 className="text-2xl font-black text-[#002046]">{title}</h3>
-          </div>
-        ))}
-      </div>
+    <div className="student-layout min-h-screen pb-20">
+      <nav className="p-8 flex justify-between items-center">
+        <button onClick={() => setAppMode('TEACHER')} className="px-6 py-2 bg-[#002046] text-white rounded-full font-black text-[10px] uppercase">← Return to Hub</button>
+        <div className="font-black text-[#002046]">Year 6 Science Mission</div>
+      </nav>
+
+      {view === 'DASHBOARD' ? (
+        <div className="max-w-6xl mx-auto px-6">
+           <header className="text-center mt-10 mb-20">
+              <Logo />
+              <h1 className="text-7xl font-black text-[#002046] mt-8 mb-4 tracking-tighter">Curiosity Drive</h1>
+              <p className="text-xl font-bold text-slate-400">Junior School Inquiry Portal</p>
+           </header>
+
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
+              <div onClick={() => {setView('TEXTBOOK'); callAI('TEXTBOOK');}} className="card text-center cursor-pointer hover:bg-[#78beeb] group">
+                 <span className="text-6xl mb-4 block">📖</span>
+                 <h3 className="text-2xl font-black group-hover:text-white">Theory</h3>
+              </div>
+              <div onClick={() => setView('LAB')} className="card text-center cursor-pointer bg-[#002046] text-white">
+                 <span className="text-6xl mb-4 block">🧪</span>
+                 <h3 className="text-2xl font-black">Interactive Lab</h3>
+              </div>
+              <div onClick={() => setView('QUIZ')} className="card text-center cursor-pointer hover:bg-[#78beeb] group">
+                 <span className="text-6xl mb-4 block">🎯</span>
+                 <h3 className="text-2xl font-black group-hover:text-white">Mastery</h3>
+              </div>
+           </div>
+
+           {/* STUDENT GAP ANALYSIS SECTION */}
+           <section className="mt-20">
+              <h2 className="text-3xl font-black mb-10 border-b-2 border-slate-200 pb-4">Scientific Progress Report</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                 <div className="card border-t-8 border-blue-500">
+                    <h4 className="font-black text-[10px] text-blue-500 uppercase mb-4">Content Mastery</h4>
+                    <p className="text-sm font-bold text-slate-500 leading-relaxed">"Focus on the distinction between mass and weight during the friction experiments."</p>
+                 </div>
+                 <div className="card border-t-8 border-orange-400">
+                    <h4 className="font-black text-[10px] text-orange-400 uppercase mb-4">Scientific Communication</h4>
+                    <p className="text-sm font-bold text-slate-500 leading-relaxed">"Excellent use of keywords! Next step: use 'Inertia' in your evaluation."</p>
+                 </div>
+                 <div className="card border-t-8 border-emerald-500">
+                    <h4 className="font-black text-[10px] text-emerald-500 uppercase mb-4">Working Scientifically</h4>
+                    <p className="text-sm font-bold text-slate-500 leading-relaxed">"Identified independent variables correctly. Try improving your graph scaling."</p>
+                 </div>
+              </div>
+
+              {/* CHALLENGE ACCELERATOR */}
+              <div className="mt-12 p-12 bg-gradient-to-br from-[#002046] to-[#1e3a8a] rounded-[3.5rem] text-white relative overflow-hidden shadow-2xl">
+                 <div className="absolute top-0 right-0 p-10 opacity-10 text-9xl">🚀</div>
+                 <h3 className="text-[10px] font-black uppercase tracking-[0.4em] mb-4 text-[#78beeb]">Extension Mission</h3>
+                 <h4 className="text-4xl font-black mb-6">Quantum Challenge: Gravity in a Vacuum</h4>
+                 <p className="text-lg opacity-80 max-w-2xl mb-8 leading-relaxed">Design an experiment to prove if a feather and a hammer fall at the same speed on the Moon. What equipment would you need?</p>
+                 <button className="px-8 py-3 bg-white text-[#002046] rounded-xl font-black text-xs uppercase shadow-lg">Start Challenge ➔</button>
+              </div>
+           </section>
+        </div>
+      ) : (
+        <div className="max-w-4xl mx-auto px-6 py-10 animate-in slide-in-from-bottom-10">
+           <button onClick={() => setView('DASHBOARD')} className="mb-10 text-slate-400 font-black uppercase text-xs">← Back to Dashboard</button>
+           {loading ? <div className="loader w-12 h-12 border-4 rounded-full mx-auto"></div> : (
+             <div className="card p-12">
+                {view === 'TEXTBOOK' && aiContent && (
+                  <>
+                    <h1 className="text-5xl font-black mb-6 italic">{aiContent.title}</h1>
+                    {aiContent.sections.map((s, i) => (
+                      <div key={i} className="mb-8"><h2 className="text-2xl font-black mb-2">{s.h}</h2><p className="text-lg text-slate-600 leading-relaxed">{s.p}</p></div>
+                    ))}
+                  </>
+                )}
+                {view === 'LAB' && <iframe src="https://phet.colorado.edu/sims/html/forces-and-motion-basics/latest/forces-and-motion-basics_en.html" className="w-full h-[500px] rounded-2xl"></iframe>}
+                {view === 'QUIZ' && <div className="text-center py-20"><h2 className="text-3xl font-black">AI Assessment Loading...</h2><button className="mt-6 px-10 py-4 bg-[#002046] text-white rounded-2xl font-black">Begin Quiz</button></div>}
+             </div>
+           )}
+        </div>
+      )}
     </div>
   );
 }
