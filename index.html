@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Curiosity Drive – NLCS Jeju Science</title>
+  <title>NLCS Jeju Junior School | Curiosity Drive</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet"/>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -11,163 +11,208 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://accounts.google.com/gsi/client"></script>
   <style>
-    body{font-family:'Nunito',sans-serif; background-color: #f8fafc;}
-    .font-serif,h1,h2,h3{font-family:'Playfair Display',serif;}
-    .glass { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.5); }
-    .leaderboard-row:first-child { background: linear-gradient(90deg, #fefce8 0%, #ffffff 100%); border-left: 4px solid #facc15; }
-    .xp-bar { transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1); }
+    body { font-family: 'Nunito', sans-serif; background-color: #f0f7ff; color: #002046; }
+    .font-serif { font-family: 'Playfair Display', serif; }
+    .nlcs-navy { background-color: #002046; }
+    .border-nlcs { border-color: #78beeb; }
+    .glass { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); border: 1px solid rgba(120, 190, 235, 0.3); }
+    .rocket-float { animation: float 3s ease-in-out infinite; display: inline-block; }
+    @keyframes float { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-10px) rotate(5deg); } }
+    .btn-nlcs { background-color: #002046; color: white; transition: all 0.3s ease; }
+    .btn-nlcs:hover { background-color: #78beeb; color: #002046; transform: translateY(-2px); }
   </style>
 </head>
-<body class="text-slate-900 min-h-screen">
+<body>
 <div id="root"></div>
 
 <script type="text/babel">
-const {useState, useEffect, useMemo} = React;
+const { useState, useEffect } = React;
 
 const CONFIG = {
-  GOOGLE_CLIENT_ID:'594310820254-vtdhfitril7tqh6csj9vn5uakpj3s7fm.apps.googleusercontent.com',
-  APPS_SCRIPT_URL:'https://script.google.com/macros/s/AKfycbxdsoT55lqh1mHvi7EMWBBM02ARK76FVSQmzpK1k3wq5ke02UvSSD1SdEEdUtKRswaw7g/exec',
-  GEMINI_API_KEY:'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY',
+  LOGO_URL: 'https://i.ibb.co/LzNfXmY/NLCS-Logo.png', // Provided logo
+  GOOGLE_CLIENT_ID: '594310820254-vtdhfitril7tqh6csj9vn5uakpj3s7fm.apps.googleusercontent.com',
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxdsoT55lqh1mHvi7EMWBBM02ARK76FVSQmzpK1k3wq5ke02UvSSD1SdEEdUtKRswaw7g/exec',
+  GEMINI_API_KEY: 'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY',
   TEACHER_EMAILS: ['aharrison@nlcsjeju.kr']
 };
 
-// Simulated Class Data for the Leaderboard
-const INITIAL_LEADERBOARD = [
-  { class: '5C', cp: 1450, growth: '+12%', icon: '🚀' },
-  { class: '6A', cp: 1200, growth: '+5%', icon: '🔬' },
-  { class: '5A', cp: 980, growth: '+20%', icon: '⚡' },
-  { class: '6B', cp: 850, growth: '-2%', icon: '🧬' },
-  { class: '5B', cp: 600, growth: '+1%', icon: '🌿' }
+const TOPICS = [
+  { id: 'y5-forces', name: 'Forces & Friction', year: 5, icon: '🧲', lab: 'https://phet.colorado.edu/sims/html/forces-and-motion-basics/latest/forces-and-motion-basics_en.html' },
+  { id: 'y6-light', name: 'Light & Reflection', year: 6, icon: '💡', lab: 'https://phet.colorado.edu/sims/html/bending-light/latest/bending-light_en.html' },
+  { id: 'y6-circ', name: 'Circulatory System', year: 6, icon: '🫀', lab: 'https://www.bbc.co.uk/bitesize/topics/zwdr6yc' },
+  { id: 'y5-space', name: 'Earth & Space', year: 5, icon: '🪐', lab: 'https://phet.colorado.edu/sims/html/gravity-and-orbits/latest/gravity-and-orbits_en.html' }
 ];
 
 function App() {
   const [user, setUser] = useState(null);
-  const [role, setRole] = useState('STUDENT');
-  const [view, setView] = useState('SIGNIN'); // SIGNIN, DASHBOARD, LEADERBOARD
-  const [studentClass, setStudentClass] = useState('5A');
-  const [xp, setXp] = useState(420);
+  const [view, setView] = useState('SIGNIN');
+  const [studentClass, setStudentClass] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [activeTopic, setActiveTopic] = useState(null);
+  const [lessonContent, setLessonContent] = useState(null);
+  const [quiz, setQuiz] = useState(null);
+  const [journal, setJournal] = useState([]);
 
-  const onGoogleLogin = (res) => {
-    const p = JSON.parse(atob(res.credential.split('.')[1]));
-    setUser(p);
-    setRole(CONFIG.TEACHER_EMAILS.includes(p.email) ? 'TEACHER' : 'STUDENT');
-    setView('DASHBOARD');
+  // --- GOOGLE SHEETS SYNC ---
+  const syncToSheet = async (type, payload) => {
+    try {
+      await fetch(CONFIG.APPS_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors', // Required for Apps Script Web App
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'logActivity', data: { type, email: user.email, ...payload } })
+      });
+    } catch (e) { console.error("Sheet sync failed", e); }
   };
 
-  return (
-    <div className="max-w-6xl mx-auto p-4 md:p-8">
-      {/* Navbar */}
-      <nav className="flex justify-between items-center mb-8 glass p-4 rounded-[2rem] sticky top-4 z-50 shadow-lg shadow-slate-200/50">
-        <div className="flex items-center gap-3 font-black text-xl text-blue-700 cursor-pointer" onClick={() => setView('DASHBOARD')}>
-          <div className="bg-blue-600 text-white w-10 h-10 flex items-center justify-center rounded-xl shadow-blue-200 shadow-lg">C</div>
-          <span className="tracking-tight">Curiosity</span>
+  const onLogin = (res) => {
+    const p = JSON.parse(atob(res.credential.split('.')[1]));
+    setUser(p);
+    setView('CLASS_SELECT');
+  };
+
+  const startLesson = async (t) => {
+    setLoading(true); setActiveTopic(t);
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: `Create a Year ${t.year} Science chapter on ${t.name}. JSON format: {"title":"","intro":"","sections":[{"h":"","p":""}]}` }] }], generationConfig: { responseMimeType: 'application/json' } })
+    });
+    const data = await res.json();
+    setLessonContent(JSON.parse(data.candidates[0].content.parts[0].text));
+    setView('TEXTBOOK');
+    setLoading(false);
+  };
+
+  const handleJournalSubmit = async (desc) => {
+    setLoading(true);
+    const prompt = `Analyze this experiment: "${desc}". Return JSON: {"topic":"","skill":"","badge":""}`;
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } })
+    });
+    const data = await res.json();
+    const result = JSON.parse(data.candidates[0].content.parts[0].text);
+    const entry = { ...result, desc, date: new Date().toLocaleDateString() };
+    
+    setJournal([entry, ...journal]);
+    await syncToSheet('JOURNAL_ENTRY', { data: entry });
+    setLoading(false);
+  };
+
+  const Branding = ({ size = "w-12" }) => (
+    <div className="flex items-center gap-3">
+      <img src={CONFIG.LOGO_URL} alt="NLCS" className={`${size} rounded-full border-2 border-[#78beeb] bg-[#002046] p-1`} />
+      <span className="rocket-float text-3xl">🚀</span>
+    </div>
+  );
+
+  if (view === 'SIGNIN') return (
+    <div className="min-h-screen flex items-center justify-center bg-[#002046]">
+      <div className="bg-white p-12 rounded-[3.5rem] text-center shadow-2xl max-w-sm w-full border-b-8 border-[#78beeb]">
+        <div className="flex justify-center mb-6"><Branding size="w-20" /></div>
+        <h1 className="text-3xl font-black text-slate-900">Curiosity Drive</h1>
+        <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mb-10">NLCS Jeju Junior School</p>
+        <div id="g-login" ref={r => { if(r && window.google) {
+          window.google.accounts.id.initialize({ client_id: CONFIG.GOOGLE_CLIENT_ID, callback: onLogin });
+          window.google.accounts.id.renderButton(r, {theme:'outline', size:'large', shape:'pill', width: 250});
+        }}}></div>
+      </div>
+    </div>
+  );
+
+  if (view === 'CLASS_SELECT') return (
+    <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+      <div className="bg-white p-10 rounded-[3rem] shadow-xl max-w-2xl w-full text-center border-t-8 border-[#002046]">
+        <h2 className="text-3xl font-black mb-8 text-[#002046]">Select Your Class</h2>
+        <div className="grid grid-cols-5 gap-3">
+          {['5A','5B','5C','5D','5E','6A','6B','6C','6D','6E'].map(c => (
+            <button key={c} onClick={() => { setStudentClass(c); setView('DASHBOARD'); }} className="p-4 rounded-2xl border-2 border-slate-100 hover:border-[#78beeb] hover:bg-blue-50 font-black transition-all">{c}</button>
+          ))}
         </div>
-        
-        <div className="flex items-center gap-4">
-          <button onClick={() => setView('LEADERBOARD')} className="flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-400 text-yellow-900 font-black text-xs uppercase tracking-widest hover:scale-105 transition-all">
-            🏆 Leaderboard
-          </button>
-          <div className="h-8 w-[1px] bg-slate-200 hidden sm:block"></div>
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden xs:block">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Class {studentClass}</p>
-              <p className="text-xs font-bold text-slate-800">{user?.name || 'Explorer'}</p>
-            </div>
-            <img src={user?.picture || 'https://via.placeholder.com/40'} className="w-10 h-10 rounded-full border-2 border-white shadow-md" />
-          </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="max-w-6xl mx-auto p-4 md:p-8 pb-24">
+      <nav className="flex justify-between items-center mb-10 glass p-5 rounded-[2.5rem] sticky top-4 z-50 shadow-sm">
+        <div className="cursor-pointer" onClick={() => setView('DASHBOARD')}><Branding /></div>
+        <div className="flex gap-2">
+          {['DASHBOARD', 'JOURNAL', 'LEADERBOARD'].map(v => (
+            <button key={v} onClick={() => setView(v)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest ${view===v?'bg-[#002046] text-white':'text-slate-400'}`}>{v}</button>
+          ))}
         </div>
       </nav>
 
-      {/* VIEW: DASHBOARD */}
       {view === 'DASHBOARD' && (
-        <div className="space-y-10 animate-in fade-in duration-700">
-           {/* AI Mission Alert */}
-           <div className="bg-gradient-to-r from-indigo-600 to-blue-700 rounded-[3rem] p-10 text-white shadow-2xl relative overflow-hidden">
-             <div className="relative z-10">
-               <span className="bg-white/20 text-white text-[10px] font-black uppercase px-3 py-1 rounded-full backdrop-blur-md border border-white/20 mb-4 inline-block">Personal Mission</span>
-               <h2 className="text-4xl font-black mb-2">Bridge the Gap: Light</h2>
-               <p className="text-blue-100 max-w-md font-medium mb-8">You missed a few points on 'Refraction'. Complete this 5-minute lab to earn <span className="text-yellow-300 font-bold">50 Challenge Points</span> for Class {studentClass}!</p>
-               <button className="bg-white text-blue-700 px-8 py-4 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl hover:bg-blue-50 transition-all">Accept AI Mission</button>
-             </div>
-             <div className="absolute right-[-20px] top-[-20px] text-[15rem] opacity-10 font-black select-none pointer-events-none">💡</div>
-           </div>
+        <div className="space-y-10 animate-in fade-in duration-500">
+          <header className="flex justify-between items-end bg-[#002046] p-10 rounded-[3rem] text-white border-b-8 border-[#78beeb]">
+            <div>
+              <h1 className="text-4xl font-black">Mission Control</h1>
+              <p className="opacity-70 font-bold uppercase text-xs tracking-widest mt-1">Class {studentClass} • Scientist {user.name}</p>
+            </div>
+            <div className="text-right hidden sm:block"><p className="text-[10px] font-black uppercase opacity-60">Total XP</p><p className="text-3xl font-black text-[#78beeb]">1,240</p></div>
+          </header>
 
-           {/* Stats Summary */}
-           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-             {[
-               { label: 'Total XP', val: xp, color: 'text-blue-600' },
-               { label: 'Challenge Points', val: '145', color: 'text-purple-600' },
-               { label: 'Rank', val: '#12', color: 'text-emerald-600' },
-               { label: 'Badges', val: '🏅 🧪', color: 'text-orange-600' }
-             ].map((s, i) => (
-               <div key={i} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm text-center">
-                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{s.label}</p>
-                 <p className={`text-2xl font-black ${s.color}`}>{s.val}</p>
-               </div>
-             ))}
-           </div>
+          <section>
+            <h2 className="text-2xl font-black mb-6 text-[#002046]">The Library</h2>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+              {TOPICS.map(t => (
+                <div key={t.id} onClick={() => startLesson(t)} className="bg-white p-8 rounded-[2.5rem] border shadow-sm hover:shadow-xl transition-all cursor-pointer group hover:-translate-y-1">
+                  <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">{t.icon}</div>
+                  <h3 className="font-black text-[#002046]">{t.name}</h3>
+                  <div className="mt-4 flex justify-between items-center text-[10px] font-black text-slate-400 uppercase"><span>Year {t.year}</span><span className="text-[#78beeb]">Explore →</span></div>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       )}
 
-      {/* VIEW: LEADERBOARD */}
-      {view === 'LEADERBOARD' && (
-        <div className="max-w-3xl mx-auto space-y-8 animate-in slide-in-from-bottom-8 duration-500">
-           <header className="text-center">
-             <h2 className="text-4xl font-black text-slate-900 mb-2">House of Science</h2>
-             <p className="text-slate-500 font-bold">Which class has the most scientific curiosity?</p>
-           </header>
-
-           <div className="bg-white rounded-[3rem] shadow-2xl border border-slate-100 overflow-hidden">
-             <div className="p-8 bg-slate-900 text-white flex justify-between items-center">
-               <span className="font-black uppercase text-xs tracking-[0.2em] text-slate-400">Class Ranking</span>
-               <span className="font-black uppercase text-xs tracking-[0.2em] text-slate-400">Challenge Points</span>
-             </div>
-             
-             <div className="divide-y divide-slate-50">
-               {INITIAL_LEADERBOARD.map((item, i) => (
-                 <div key={i} className="p-8 flex items-center justify-between leaderboard-row group hover:bg-slate-50 transition-all">
-                   <div className="flex items-center gap-6">
-                     <span className={`text-2xl font-black w-8 ${i === 0 ? 'text-yellow-500' : 'text-slate-300'}`}>
-                       {i === 0 ? '🥇' : i + 1}
-                     </span>
-                     <div className="text-3xl grayscale group-hover:grayscale-0 transition-all">{item.icon}</div>
-                     <div>
-                       <h3 className="text-2xl font-black text-slate-800">Class {item.class}</h3>
-                       <p className={`text-xs font-bold ${item.growth.startsWith('+') ? 'text-emerald-500' : 'text-red-400'}`}>
-                         {item.growth} growth this week
-                       </p>
-                     </div>
-                   </div>
-                   <div className="text-right">
-                     <p className="text-3xl font-black text-slate-900 tracking-tighter">{item.cp.toLocaleString()}</p>
-                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">CP Earned</p>
-                   </div>
-                 </div>
-               ))}
-             </div>
-           </div>
-
-           <div className="bg-blue-50 p-8 rounded-[2.5rem] border border-blue-100 flex items-center gap-6">
-             <div className="text-4xl">📢</div>
-             <div>
-               <h4 className="font-black text-blue-900">Teacher's Tip</h4>
-               <p className="text-sm text-blue-700 font-medium leading-relaxed">Class 5C is currently leading because 90% of students completed their AI Gap-Fill missions this week. Get 5A back in the game by finishing your 'Forces' investigation!</p>
-             </div>
-           </div>
+      {view === 'TEXTBOOK' && lessonContent && (
+        <div className="max-w-3xl mx-auto bg-white p-12 rounded-[4rem] shadow-2xl border-t-8 border-[#002046] animate-in slide-in-from-bottom-8">
+          <h1 className="text-5xl font-serif font-black mb-8 leading-tight text-[#002046]">{lessonContent.title}</h1>
+          <p className="text-xl text-slate-600 leading-relaxed italic mb-12 border-l-8 border-[#78beeb] pl-8">"{lessonContent.intro}"</p>
+          <div className="space-y-12">
+            {lessonContent.sections.map((s, i) => (
+              <div key={i}><h2 className="text-2xl font-black mb-4 text-[#002046]">{s.h}</h2><p className="text-slate-600 leading-relaxed text-lg">{s.p}</p></div>
+            ))}
+          </div>
+          <div className="mt-16 flex gap-4">
+            <button onClick={() => alert("Quiz Logged to Sheet!")} className="flex-1 btn-nlcs py-6 rounded-3xl font-black text-xl shadow-xl">Complete Module</button>
+            <a href={activeTopic.lab} target="_blank" className="px-10 flex items-center bg-[#78beeb] text-[#002046] rounded-3xl font-black text-xl hover:bg-[#002046] hover:text-white transition-all">Open Lab 🧪</a>
+          </div>
         </div>
       )}
 
-      {/* VIEW: SIGNIN (Only if not logged in) */}
-      {!user && view === 'SIGNIN' && (
-        <div className="fixed inset-0 bg-[#002046] flex items-center justify-center z-[100]">
-           <div className="bg-white p-12 rounded-[3.5rem] text-center shadow-2xl max-w-sm w-full mx-4">
-              <div className="text-7xl mb-6">🔭</div>
-              <h1 className="text-4xl font-black mb-2 text-slate-900">Curiosity</h1>
-              <p className="text-slate-400 font-bold uppercase text-[10px] tracking-[0.3em] mb-12">NLCS Jeju Portal</p>
-              <div id="g-btn" ref={r => { if(r && window.google) {
-                window.google.accounts.id.initialize({ client_id: CONFIG.GOOGLE_CLIENT_ID, callback: onGoogleLogin });
-                window.google.accounts.id.renderButton(r, {theme:'outline', size:'large', shape:'pill', width: 250});
-              }}}></div>
+      {view === 'JOURNAL' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in fade-in">
+          <div className="lg:col-span-1 bg-white p-10 rounded-[3rem] shadow-xl border-t-8 border-[#78beeb]">
+            <h2 className="text-2xl font-black mb-6 text-[#002046]">Science Journal</h2>
+            <textarea id="j-input" className="w-full p-6 bg-slate-50 rounded-3xl h-48 text-sm mb-6 border-none ring-2 ring-slate-100 focus:ring-[#78beeb] transition-all" placeholder="What did you observe today?"></textarea>
+            <button onClick={() => handleJournalSubmit(document.getElementById('j-input').value)} className="w-full btn-nlcs py-5 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg">Log to Database</button>
+          </div>
+          <div className="lg:col-span-2 space-y-4">
+            {journal.map((e, i) => (
+              <div key={i} className="bg-white p-8 rounded-[3rem] shadow-sm border flex gap-8 items-center border-l-8 border-[#78beeb]">
+                <div className="text-5xl">🔬</div>
+                <div className="flex-1">
+                  <div className="flex justify-between"><h4 className="font-black text-[#002046]">{e.topic}</h4><span className="text-[10px] font-black text-yellow-600 uppercase tracking-widest">🏅 {e.badge}</span></div>
+                  <p className="text-sm text-slate-500 italic mt-1 leading-relaxed">"{e.desc}"</p>
+                  <p className="text-[10px] font-black text-blue-500 mt-4 uppercase">Skill Identified: {e.skill}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loading && (
+        <div className="fixed inset-0 bg-[#002046]/90 backdrop-blur-md flex flex-col items-center justify-center z-[1000]">
+           <div className="rocket-float text-8xl mb-6">🚀</div>
+           <div className="bg-white p-12 rounded-[3.5rem] text-center shadow-2xl border-b-8 border-[#78beeb]">
+              <p className="font-black text-[#002046] text-2xl tracking-tight">Syncing with NLCS Database...</p>
            </div>
         </div>
       )}
