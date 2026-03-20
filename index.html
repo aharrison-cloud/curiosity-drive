@@ -11,58 +11,64 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://accounts.google.com/gsi/client"></script>
   <style>
-    body { font-family: 'Nunito', sans-serif; background: #f8fafc; color: #002046; }
-    .teacher-sidebar { background: #002046; color: white; width: 300px; height: 100vh; position: fixed; }
-    .main-content { margin-left: 300px; padding: 40px; }
-    .card { background: white; border-radius: 2rem; padding: 2rem; box-shadow: 0 4px 20px rgba(0,32,70,0.05); border: 1px solid #e2e8f0; }
-    .status-pill { padding: 4px 12px; border-radius: 999px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+    body { font-family: 'Nunito', sans-serif; background: #f8fafc; color: #002046; transition: all 0.3s ease; }
+    .teacher-sidebar { background: #002046; color: white; width: 280px; height: 100vh; position: fixed; left: 0; top: 0; z-index: 50; }
+    .main-layout { margin-left: 280px; padding: 40px; min-height: 100vh; }
+    .student-layout { margin-left: 0; padding: 20px; min-height: 100vh; background: #f0f7ff; }
+    .card { background: white; border-radius: 2rem; padding: 1.5rem; box-shadow: 0 4px 20px rgba(0,32,70,0.05); border: 1px solid #e2e8f0; }
     
     /* Atom Rocket Logo */
     .atom-container { position: relative; width: 50px; height: 50px; margin: 0 auto; }
     .nucleus { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; background: #78beeb; border-radius: 50%; transform: translate(-50%, -50%); }
-    .orbit { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 1px solid rgba(120, 190, 235, 0.3); border-radius: 50%; animation: rotate 3s linear infinite; }
+    .orbit { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 1px solid rgba(120, 190, 235, 0.3); border-radius: 50%; animation: rotate 4s linear infinite; }
     .orbit:nth-child(2) { transform: rotate(60deg); }
     .rocket-head { position: absolute; top: -8px; left: 50%; font-size: 16px; transform: translateX(-50%); }
     @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    
+    .scroll-hide::-webkit-scrollbar { display: none; }
   </style>
 </head>
 <body>
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect } = React;
+const { useState, useMemo } = React;
 
 const CONFIG = {
   GEMINI_API_KEY: 'AIzaSyDY-LfdOB4xKaCw7bGcdc6L7qDcjI_usAY',
   TEACHER_DOMAIN: '@nlcsjeju.kr'
 };
 
-const MOCK_DATA = {
-  "5A": [
-    { id: 1, name: "Ji-hoon Lee", score: 85, lastTopic: "Forces", journals: 4 },
-    { id: 2, name: "Sarah Park", score: 62, lastTopic: "Circulation", journals: 2 },
-    { id: 3, name: "Alex Kim", score: 92, lastTopic: "Light", journals: 7 }
-  ],
-  "6B": [
-    { id: 4, name: "Yuna Choi", score: 78, lastTopic: "Space", journals: 5 },
-    { id: 5, name: "Leo Zhang", score: 45, lastTopic: "Light", journals: 1 }
-  ]
-};
+// Generate Classes 5A-E and 6A-E
+const CLASSES = ['5A','5B','5C','5D','5E','6A','6B','6C','6D','6E'];
+
+// Detailed Mock Student Records
+const MOCK_DB = CLASSES.reduce((acc, cls) => {
+  acc[cls] = [
+    { id: Math.random(), name: "Ji-Min Kim", content: 88, communication: 70, workingSci: 92, lastActive: "2 hours ago" },
+    { id: Math.random(), name: "Chloe Park", content: 42, communication: 55, workingSci: 30, lastActive: "1 day ago" },
+    { id: Math.random(), name: "Thomas Row", content: 95, communication: 98, workingSci: 85, lastActive: "Just now" }
+  ];
+  return acc;
+}, {});
 
 function App() {
-  const [user, setUser] = useState({ name: "Mr. Harrison", email: "aharrison@nlcsjeju.kr" });
-  const [view, setView] = useState('TEACHER_HUB');
+  const [user, setUser] = useState({ name: "Science Lead", email: "lead@nlcsjeju.kr" });
+  const [appMode, setAppMode] = useState('TEACHER'); // TEACHER or STUDENT
   const [selectedClass, setSelectedClass] = useState("5A");
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [aiInsight, setAiInsight] = useState(null);
+  const [aiAnalysis, setAiAnalysis] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const getAIInsight = async (student) => {
+  const runAIAnalysis = async (student) => {
     setLoading(true);
     setSelectedStudent(student);
     try {
-      const prompt = `Student: ${student.name}. Current Score: ${student.score}%. Recent Topic: ${student.lastTopic}. 
-      Generate AI Teacher Feedback. JSON format: {"gaps": "", "nextSteps": "", "curiosityLevel": ""}`;
+      const prompt = `Analyze this NLCS Junior Scientist: 
+      Name: ${student.name}. 
+      Scores: Content(${student.content}%), Scientific Communication(${student.communication}%), Working Scientifically(${student.workingSci}%).
+      Provide a professional report in JSON: 
+      {"strengths": "", "gaps": "", "contentAdvice": "", "commAdvice": "", "workingSciAdvice": "", "nextStep": ""}`;
       
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`, {
         method: 'POST',
@@ -70,8 +76,8 @@ function App() {
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json' } })
       });
       const data = await res.json();
-      setAiInsight(JSON.parse(data.candidates[0].content.parts[0].text));
-    } catch (e) { console.error(e); }
+      setAiAnalysis(JSON.parse(data.candidates[0].content.parts[0].text));
+    } catch (e) { setAiAnalysis({ gaps: "Analysis Error. Check API Key." }); }
     setLoading(false);
   };
 
@@ -83,115 +89,145 @@ function App() {
     </div>
   );
 
-  return (
-    <div className="flex">
-      {/* SIDEBAR */}
-      <aside className="teacher-sidebar p-8">
+  // --- TEACHER VIEW ---
+  if (appMode === 'TEACHER') return (
+    <div className="flex bg-[#f8fafc]">
+      <aside className="teacher-sidebar p-6 flex flex-col">
         <Logo />
-        <h1 className="text-center font-black mt-4 text-sm tracking-widest uppercase">Curiosity Drive</h1>
+        <h2 className="text-center font-black text-[10px] tracking-[0.3em] uppercase mt-4 mb-8">Curiosity Drive</h2>
         
-        <div className="mt-12 space-y-2">
-          <p className="text-[10px] font-black text-slate-500 uppercase px-4">Select Class</p>
-          {Object.keys(MOCK_DATA).map(cls => (
+        <div className="flex-1 overflow-y-auto scroll-hide space-y-1">
+          <p className="text-[10px] font-black text-slate-500 uppercase px-4 mb-2">Academic Year 2026</p>
+          {CLASSES.map(cls => (
             <button key={cls} 
-              onClick={() => { setSelectedClass(cls); setSelectedStudent(null); setAiInsight(null); }}
-              className={`w-full text-left px-6 py-3 rounded-2xl font-bold transition-all ${selectedClass === cls ? 'bg-[#78beeb] text-[#002046]' : 'hover:bg-white/5'}`}>
+              onClick={() => { setSelectedClass(cls); setSelectedStudent(null); setAiAnalysis(null); }}
+              className={`w-full text-left px-5 py-3 rounded-xl font-bold text-sm transition-all ${selectedClass === cls ? 'bg-[#78beeb] text-[#002046]' : 'hover:bg-white/5 opacity-60'}`}>
               Class {cls}
             </button>
           ))}
         </div>
 
-        <div className="absolute bottom-8 left-8 right-8">
-          <button onClick={() => alert("Switching to Student View...")} className="w-full py-4 bg-white/10 rounded-2xl font-black text-xs uppercase border border-white/20 hover:bg-white/20 transition-all">
-            Student Preview 👁️
-          </button>
-        </div>
+        <button onClick={() => setAppMode('STUDENT')} className="mt-6 w-full py-4 bg-emerald-500 text-white rounded-2xl font-black text-xs uppercase shadow-lg hover:bg-emerald-400 transition-all">
+          Enter Student View 👁️
+        </button>
       </aside>
 
-      {/* MAIN CONTENT */}
-      <main className="main-content flex-1">
-        <header className="flex justify-between items-center mb-12">
+      <main className="main-layout flex-1">
+        <header className="flex justify-between items-start mb-10">
           <div>
-            <h2 className="text-4xl font-black">Teacher Dashboard</h2>
-            <p className="text-slate-400 font-bold">Inquiry Tracking: Class {selectedClass}</p>
+            <h1 className="text-4xl font-black text-[#002046]">Faculty Dashboard</h1>
+            <p className="text-slate-400 font-bold mt-1">Viewing Analytics for Class {selectedClass}</p>
           </div>
-          <div className="bg-white px-6 py-3 rounded-full border flex items-center gap-4">
-            <div className="w-8 h-8 bg-[#002046] rounded-full"></div>
-            <span className="font-black text-sm">{user.name}</span>
+          <div className="flex items-center gap-4 bg-white p-3 rounded-3xl border shadow-sm">
+            <div className="text-right"><p className="font-black text-sm">{user.name}</p></div>
+            <div className="w-10 h-10 bg-[#002046] rounded-2xl"></div>
           </div>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* STUDENT LIST */}
-          <div className="lg:col-span-1 space-y-4">
-            <h3 className="font-black text-lg px-2">Student Roster</h3>
-            {MOCK_DATA[selectedClass].map(student => (
-              <div key={student.id} 
-                onClick={() => getAIInsight(student)}
-                className={`card cursor-pointer hover:border-[#78beeb] transition-all !p-6 flex justify-between items-center ${selectedStudent?.id === student.id ? 'ring-2 ring-[#78beeb]' : ''}`}>
-                <div>
-                  <p className="font-black">{student.name}</p>
-                  <p className="text-xs text-slate-400">XP: {student.journals * 250}</p>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+          <div className="xl:col-span-1 space-y-4">
+            <h3 className="font-black text-slate-400 uppercase text-xs tracking-widest px-2">Student Records</h3>
+            {MOCK_DB[selectedClass].map(s => (
+              <div key={s.id} onClick={() => runAIAnalysis(s)} 
+                className={`card cursor-pointer transition-all hover:scale-[1.02] ${selectedStudent?.id === s.id ? 'ring-2 ring-[#78beeb] bg-blue-50/50' : ''}`}>
+                <div className="flex justify-between items-center">
+                  <p className="font-black text-[#002046]">{s.name}</p>
+                  <span className="text-[10px] font-black text-slate-400 uppercase">{s.lastActive}</span>
                 </div>
-                <div className={`status-pill ${student.score > 80 ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
-                  {student.score}%
+                <div className="flex gap-2 mt-3">
+                  <div className="h-1 flex-1 bg-slate-100 rounded-full overflow-hidden">
+                    <div style={{width: `${s.content}%`}} className="h-full bg-[#002046]"></div>
+                  </div>
+                  <span className="text-[10px] font-black">{s.content}%</span>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* AI ANALYTICS PANEL */}
-          <div className="lg:col-span-2">
+          <div className="xl:col-span-2">
             {!selectedStudent ? (
-              <div className="card h-full flex flex-col items-center justify-center text-slate-300 border-dashed border-2">
-                <div className="text-6xl mb-4">🔍</div>
-                <p className="font-bold">Select a student to generate AI insights</p>
+              <div className="card h-full flex flex-col items-center justify-center border-dashed border-4 border-slate-100 min-h-[500px]">
+                <div className="text-6xl mb-4">🔬</div>
+                <p className="font-black text-slate-300 text-xl">Select a Scientist to Review Records</p>
               </div>
             ) : (
-              <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-                <div className="card !bg-[#002046] text-white">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="text-3xl font-black">{selectedStudent.name}</h3>
-                      <p className="text-[#78beeb] font-bold">Current Focus: {selectedStudent.lastTopic}</p>
+              <div className="space-y-6 animate-in slide-in-from-right-10 duration-500">
+                <div className="card bg-[#002046] text-white p-10 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-10 opacity-10 text-8xl">🧬</div>
+                  <h3 className="text-4xl font-black">{selectedStudent.name}</h3>
+                  <div className="grid grid-cols-3 gap-4 mt-8">
+                    <div className="text-center p-4 bg-white/5 rounded-2xl">
+                      <p className="text-[10px] uppercase opacity-60 font-black mb-1">Content</p>
+                      <p className="text-2xl font-black">{selectedStudent.content}%</p>
                     </div>
-                    <div className="text-right">
-                       <p className="text-[10px] font-black uppercase opacity-60">Engagement</p>
-                       <p className="text-2xl font-black">High 🔥</p>
+                    <div className="text-center p-4 bg-white/5 rounded-2xl">
+                      <p className="text-[10px] uppercase opacity-60 font-black mb-1">Communication</p>
+                      <p className="text-2xl font-black">{selectedStudent.communication}%</p>
+                    </div>
+                    <div className="text-center p-4 bg-white/5 rounded-2xl">
+                      <p className="text-[10px] uppercase opacity-60 font-black mb-1">Working Sci.</p>
+                      <p className="text-2xl font-black">{selectedStudent.workingSci}%</p>
                     </div>
                   </div>
                 </div>
 
                 {loading ? (
-                  <div className="card flex justify-center py-20">
-                    <div className="animate-spin rounded-full h-10 w-10 border-4 border-[#78beeb] border-t-transparent"></div>
+                  <div className="card flex flex-col items-center py-20">
+                    <div className="w-12 h-12 border-4 border-[#78beeb] border-t-transparent rounded-full animate-spin mb-4"></div>
+                    <p className="font-black text-slate-400 animate-pulse">AI FILTERING RECORDS...</p>
                   </div>
-                ) : aiInsight && (
+                ) : aiAnalysis && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="card border-l-8 border-orange-400">
-                      <h4 className="font-black text-orange-500 uppercase text-xs mb-4 tracking-widest">⚠️ Gaps in Knowledge</h4>
-                      <p className="text-slate-600 leading-relaxed font-bold">{aiInsight.gaps}</p>
+                    <div className="card border-t-8 border-emerald-400">
+                      <h4 className="font-black text-xs uppercase text-slate-400 mb-4 tracking-widest">Strengths</h4>
+                      <p className="text-sm font-bold text-slate-700 leading-relaxed">{aiAnalysis.strengths}</p>
                     </div>
-                    <div className="card border-l-8 border-emerald-400">
-                      <h4 className="font-black text-emerald-500 uppercase text-xs mb-4 tracking-widest">🚀 Recommended Next Steps</h4>
-                      <p className="text-slate-600 leading-relaxed font-bold">{aiInsight.nextSteps}</p>
+                    <div className="card border-t-8 border-orange-400">
+                      <h4 className="font-black text-xs uppercase text-slate-400 mb-4 tracking-widest">Gaps / Misconceptions</h4>
+                      <p className="text-sm font-bold text-slate-700 leading-relaxed">{aiAnalysis.gaps}</p>
                     </div>
-                    <div className="card md:col-span-2 flex items-center justify-between">
-                      <div>
-                        <h4 className="font-black text-slate-400 uppercase text-xs mb-1">Curiosity Level</h4>
-                        <p className="text-xl font-black">{aiInsight.curiosityLevel}</p>
+                    <div className="card md:col-span-2 bg-blue-50 border-none">
+                      <h4 className="font-black text-xs uppercase text-[#002046] mb-4 tracking-widest">🔭 Specialized AI Pedagogy</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                         <div><p className="text-[10px] font-black text-blue-500 uppercase">On Content</p><p className="text-xs mt-1 italic">"{aiAnalysis.contentAdvice}"</p></div>
+                         <div><p className="text-[10px] font-black text-blue-500 uppercase">On Communication</p><p className="text-xs mt-1 italic">"{aiAnalysis.commAdvice}"</p></div>
+                         <div><p className="text-[10px] font-black text-blue-500 uppercase">On Methodology</p><p className="text-xs mt-1 italic">"{aiAnalysis.workingSciAdvice}"</p></div>
                       </div>
-                      <button className="bg-[#002046] text-white px-8 py-3 rounded-2xl font-black text-xs uppercase shadow-lg">Push Extension Mission</button>
+                      <div className="mt-8 pt-6 border-t border-blue-100 flex justify-between items-center">
+                        <p className="font-black text-[#002046]">Next Step: <span className="text-blue-600 underline">{aiAnalysis.nextStep}</span></p>
+                        <button className="px-6 py-2 bg-[#002046] text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Push to Student</button>
+                      </div>
                     </div>
                   </div>
                 )}
               </div>
             )}
           </div>
-
         </div>
       </main>
+    </div>
+  );
+
+  // --- STUDENT VIEW ---
+  return (
+    <div className="student-layout flex flex-col items-center justify-center text-center">
+      <div className="fixed top-6 left-6 z-50">
+        <button onClick={() => setAppMode('TEACHER')} className="px-6 py-3 bg-[#002046] text-white rounded-2xl font-black text-xs uppercase shadow-2xl">
+          ← Return to Faculty Hub
+        </button>
+      </div>
+      <Logo />
+      <h1 className="text-5xl font-black text-[#002046] mt-8 mb-4">Curiosity Drive</h1>
+      <p className="text-slate-500 font-bold text-xl mb-12">Welcome, Scientist. Your missions are ready.</p>
+      
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl w-full px-6">
+        {['Scientific Theory', 'Practical Lab', 'Mastery Check'].map((title, i) => (
+          <div key={i} className="bg-white p-12 rounded-[4rem] shadow-xl border-b-8 border-transparent hover:border-[#78beeb] transition-all cursor-pointer group">
+            <div className="text-6xl mb-6 group-hover:scale-110 transition-transform">{['📖','🧪','🎯'][i]}</div>
+            <h3 className="text-2xl font-black text-[#002046]">{title}</h3>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
