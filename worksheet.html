@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIE AR Lab Worksheet - Simple Series Circuit</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Calibri', 'Segoe UI', sans-serif;
+            background: white;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .worksheet {
+            max-width: 210mm;
+            height: 297mm;
+            margin: 0 auto;
+            padding: 20mm;
+            background: white;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 20mm;
+        }
+        
+        /* Header */
+        .header {
+            text-align: center;
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 10mm;
+        }
+        
+        .school-name {
+            font-size: 10pt;
+            color: #666;
+            letter-spacing: 1px;
+        }
+        
+        .worksheet-title {
+            font-size: 18pt;
+            font-weight: 700;
+            color: #0066cc;
+            margin: 5mm 0;
+        }
+        
+        .worksheet-meta {
+            font-size: 9pt;
+            color: #999;
+            display: flex;
+            justify-content: center;
+            gap: 20mm;
+        }
+        
+        /* Two-column layout */
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15mm;
+            flex: 1;
+        }
+        
+        /* Left column: Instructions & Fields */
+        .left-col {
+            display: flex;
+            flex-direction: column;
+            gap: 10mm;
+        }
+        
+        .section {
+            display: flex;
+            flex-direction: column;
+            gap: 5mm;
+        }
+        
+        .section-title {
+            font-size: 11pt;
+            font-weight: 700;
+            color: #0066cc;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #0066cc;
+            padding-bottom: 2mm;
+        }
+        
+        .field {
+            display: flex;
+            gap: 5mm;
+            align-items: flex-start;
+        }
+        
+        .field label {
+            font-size: 9pt;
+            font-weight: 600;
+            color: #333;
+            min-width: 45mm;
+        }
+        
+        .field input[type="text"],
+        .field input[type="date"],
+        .field select {
+            flex: 1;
+            border: none;
+            border-bottom: 1px solid #333;
+            padding: 2mm 3mm;
+            font-size: 9pt;
+        }
+        
+        .learning-intention {
+            background: #e3f2fd;
+            border-left: 4mm solid #0066cc;
+            padding: 5mm 8mm;
+            border-radius: 2mm;
+            font-size: 9pt;
+            line-height: 1.4;
+            color: #1a237e;
+        }
+        
+        .learning-intention strong {
+            display: block;
+            color: #0066cc;
+            font-size: 8pt;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 2mm;
+        }
+        
+        .observation-prompt {
+            font-size: 8pt;
+            font-style: italic;
+            color: #666;
+            margin-top: 3mm;
+            line-height: 1.5;
+        }
+        
+        /* Right column: Marker & QR */
+        .right-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8mm;
+        }
+        
+        .marker-container {
+            width: 80mm;
+            height: 80mm;
+            background: white;
+            border: 1mm solid #ccc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 2mm;
+            box-shadow: 0 2mm 8mm rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Hiro Marker (CSS-rendered) */
+        .black-border {
+            width: 60mm;
+            height: 60mm;
+            background-color: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+        
+        .white-inner {
+            width: 30mm;
+            height: 30mm;
+            background-color: white;
+            position: relative;
+        }
+        
+        .hiro-symbol {
+            position: absolute;
+            width: 20mm;
+            height: 20mm;
+            background-color: black;
+            top: 5mm;
+            left: 5mm;
+            clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 75% 100%, 75% 50%, 25% 50%, 25% 100%, 0% 100%);
+        }
+        
+        .marker-instruction {
+            text-align: center;
+            font-size: 8pt;
+            color: #666;
+            max-width: 90mm;
+            line-height: 1.4;
+        }
+        
+        .marker-instruction strong {
+            color: #0066cc;
+        }
+        
+        .marker-id {
+            font-size: 7pt;
+            color: #999;
+            font-family: 'Courier New', monospace;
+            margin-top: 3mm;
+        }
+        
+        /* Footer */
+        .footer {
+            border-top: 1px solid #ddd;
+            padding-top: 8mm;
+            font-size: 8pt;
+            color: #999;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .footer-left {
+            display: flex;
+            gap: 15mm;
+        }
+        
+        /* Print styles */
+        @media print {
+            body {
+                margin: 0;
+                padding: 0;
+                background: white;
+            }
+            
+            .worksheet {
+                max-width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 20mm;
+                box-shadow: none;
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="worksheet">
+        <!-- Header -->
+        <div class="header">
+            <div class="school-name">NLCS JEJU • SCIENCE DEPARTMENT</div>
+            <div class="worksheet-title">AR Lab Worksheet</div>
+            <div class="worksheet-meta">
+                <span><strong>Lab ID:</strong> ELEC-001</span>
+                <span><strong>Date:</strong> <span id="todayDate"></span></span>
+                <span><strong>Duration:</strong> 25 min</span>
+            </div>
+        </div>
+        
+        <!-- Main content (2 columns) -->
+        <div class="content">
+            <!-- Left column -->
+            <div class="left-col">
+                <!-- Student info -->
+                <div class="section">
+                    <div class="section-title">Student Information</div>
+                    <div class="field">
+                        <label>Name:</label>
+                        <input type="text">
+                    </div>
+                    <div class="field">
+                        <label>Year Group:</label>
+                        <select>
+                            <option>— Select —</option>
+                            <option>Y5</option>
+                            <option>Y6</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Date:</label>
+                        <input type="date">
+                    </div>
+                </div>
+                
+                <!-- Learning intention -->
+                <div class="section">
+                    <div class="learning-intention">
+                        <strong>Learning Intention (LI)</strong>
+                        Students will construct and analyze a series circuit to understand current flow and voltage distribution.
+                        <div class="observation-prompt">
+                            <strong>Key Focus:</strong> How does adding a second bulb change the brightness? Why?
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Observations -->
+                <div class="section">
+                    <div class="section-title">Observations</div>
+                    <div style="font-size: 8pt; color: #666; line-height: 1.5;">
+                        <p style="margin-bottom: 3mm;"><strong>Brightness of Bulb 1:</strong> _______________</p>
+                        <p style="margin-bottom: 3mm;"><strong>Brightness of Bulb 2:</strong> _______________</p>
+                        <p style="margin-bottom: 3mm;"><strong>Voltage across circuit:</strong> _____ V</p>
+                        <p><strong>Prediction for parallel setup:</strong> _______________________</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right column (Marker & Instructions) -->
+            <div class="right-col">
+                <div class="marker-container">
+                    <div class="black-border">
+                        <div class="white-inner">
+                            <div class="hiro-symbol"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="marker-instruction">
+                    <strong>AR Instructions:</strong><br>
+                    1. Open the <strong>MIE AR Lab App</strong> on your tablet<br>
+                    2. Point the camera at <strong>this marker</strong><br>
+                    3. Tap <strong>"Capture Evidence"</strong> when your circuit is built
+                </div>
+                
+                <div class="marker-id">Lab Metadata: ELEC-001 | Series Circuit</div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <div class="footer-left">
+                <span>MIE Version 1.0</span>
+                <span>Teacher: _________________</span>
+            </div>
+            <span>Page 1 of 1</span>
+        </div>
+    </div>
+    
+    <script>
+        // Set today's date
+        const today = new Date();
+        const formattedDate = today.toLocaleDateString('en-GB', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: 'numeric' 
+        });
+        document.getElementById('todayDate').textContent = formattedDate;
+    </script>
+</body>
+</html>
