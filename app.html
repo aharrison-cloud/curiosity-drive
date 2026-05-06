@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>MIE AR Lab Station</title>
+    
+    <!-- AR Frameworks -->
+    <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000;
+            color: #fff;
+            overflow: hidden;
+        }
+        
+        /* AR Scene */
+        a-scene {
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* Status & Header */
+        .ar-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: linear-gradient(135deg, rgba(20, 20, 30, 0.95) 0%, rgba(30, 30, 50, 0.95) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 20;
+            border-bottom: 2px solid #00d4ff;
+            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.1);
+        }
+        
+        .lab-title {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #00d4ff;
+        }
+        
+        .lab-meta {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 2px;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff3b30;
+            animation: pulse 2s infinite;
+            margin-right: 8px;
+            display: inline-block;
+        }
+        
+        .status-indicator.active {
+            background: #4cd964;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        
+        .status-text {
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            color: #aaa;
+        }
+        
+        /* Main UI Panel */
+        .ui-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 280px;
+            background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(15, 15, 25, 0.98) 40%, rgba(10, 10, 20, 1) 100%);
+            padding: 40px 20px 30px 20px;
+            z-index: 15;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(0, 212, 255, 0.2);
+        }
+        
+        .learning-intention {
+            background: rgba(0, 100, 150, 0.15);
+            border-left: 4px solid #00d4ff;
+            padding: 12px 16px;
+            border-radius: 4px;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #ccc;
+        }
+        
+        .learning-intention strong {
+            color: #00d4ff;
+            display: block;
+            margin-bottom: 4px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .btn {
+            flex: 1;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .btn:active { transform: scale(0.95); }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+            color: #000;
+            box-shadow: 0 8px 24px rgba(0, 212, 255, 0.3);
+        }
+        
+        .btn-primary:hover {
+            box-shadow: 0 12px 32px rgba(0, 212, 255, 0.4);
+            transform: translateY(-2px);
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #00d4ff;
+            border: 1px solid #00d4ff;
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(0, 212, 255, 0.15);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #4cd964 0%, #34c759 100%);
+            color: #000;
+            box-shadow: 0 8px 24px rgba(76, 217, 100, 0.3);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* Data Display */
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            font-size: 12px;
+            color: #aaa;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .data-row strong {
+            color: #00d4ff;
+        }
+        
+        /* Modal */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            border: 2px solid #00d4ff;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+        }
+        
+        .modal-content h2 {
+            color: #00d4ff;
+            margin-bottom: 16px;
+            font-size: 18px;
+            letter-spacing: 1px;
+        }
+        
+        .modal-content p {
+            color: #ccc;
+            margin-bottom: 12px;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        
+        .modal-close {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: none;
+            border: none;
+            color: #00d4ff;
+            font-size: 24px;
+            cursor: pointer;
+        }
+        
+        /* Floating notifications */
+        .notification {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: rgba(20, 20, 30, 0.95);
+            border: 2px solid #4cd964;
+            border-radius: 8px;
+            padding: 16px 20px;
+            color: #4cd964;
+            font-size: 13px;
+            font-weight: 700;
+            z-index: 50;
+            animation: slideIn 0.3s ease;
+            max-width: 300px;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .notification.error {
+            border-color: #ff3b30;
+            color: #ff3b30;
+        }
+    </style>
+</head>
+<body>
+    <!-- AR Scene -->
+    <a-scene 
+        embedded 
+        vr-mode-ui="enabled: false"
+        arjs="sourceType: webcam; debugUIEnabled: false;">
+        
+        <a-marker preset="hiro" id="marker">
+            <!-- Dynamic Lab Content (populated by JS) -->
+            <a-entity id="lab-root"></a-entity>
+        </a-marker>
+        
+        <a-entity camera></a-entity>
+    </a-scene>
+    
+    <!-- Header -->
+    <div class="ar-header">
+        <div>
+            <div class="lab-title" id="labTitle">Electricity Circuit Lab</div>
+            <div class="lab-meta" id="labMeta">Waiting for marker...</div>
+        </div>
+        <div class="status-text">
+            <span class="status-indicator" id="statusInd"></span>
+            <span id="statusText">INITIALIZING</span>
+        </div>
+    </div>
+    
+    <!-- Main UI Panel -->
+    <div class="ui-panel">
+        <div class="learning-intention" id="liPanel">
+            <strong>Learning Intention</strong>
+            <span id="liText">Scan a printed worksheet to view the 3D model.</span>
+        </div>
+        
+        <div class="action-buttons">
+            <button class="btn btn-primary" id="captureBtn" onclick="captureEvidence()">
+                📸 Capture Evidence
+            </button>
+            <button class="btn btn-secondary" id="quizBtn" onclick="triggerAdaptiveQuiz()" disabled>
+                ✓ Take Quiz
+            </button>
+            <button class="btn btn-secondary" id="logBtn" onclick="logToSheet()" disabled>
+                📊 Log Result
+            </button>
+        </div>
+    </div>
+    
+    <!-- Modal for quiz trigger -->
+    <div class="modal" id="quizModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('quizModal')">×</button>
+            <h2>Launch Adaptive Quiz?</h2>
+            <p>You're about to begin a personalized quiz based on your current mastery level. Questions will adapt to your performance.</p>
+            <div style="margin-top: 20px; display: flex; gap: 12px;">
+                <button class="btn btn-secondary" onclick="closeModal('quizModal')" style="flex: 1;">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmQuizLaunch()" style="flex: 1;">Start Quiz</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal for result -->
+    <div class="modal" id="resultModal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal('resultModal')">×</button>
+            <h2 id="resultTitle">Lab Complete</h2>
+            <p id="resultText">Your work has been captured and logged to the MIE system.</p>
+            <div style="margin-top: 20px;">
+                <button class="btn btn-success" onclick="closeModal('resultModal')" style="width: 100%;">Done</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // ============================================
+        // STATE & CONFIG
+        // ============================================
+        const state = {
+            markerDetected: false,
+            labId: null,
+            studentId: null,
+            labScenario: null,
+            evidenceCaptured: false,
+            startTime: null,
+            apiKey: localStorage.getItem('mie_api_key') || '', // For future API calls
+        };
+        
+        // Lab scenarios (can be expanded)
+        const labScenarios = {
+            'ELEC-001': {
+                title: 'Simple Series Circuit',
+                li: 'Students will construct and analyze a series circuit to understand current flow and voltage distribution.',
+                components: [
+                    { type: 'battery', pos: '0 0.5 0', color: '#d32f2f' },
+                    { type: 'bulb', pos: '-0.6 0.5 -1.0', color: '#ffd600' },
+                    { type: 'bulb', pos: '0.6 0.5 -1.0', color: '#ffd600' },
+                    { type: 'wire', start: '0 0.5 0', end: '-0.6 0.5 -0.5', color: '#2196f3' },
+                    { type: 'wire', start: '-0.6 0.5 -1.0', end: '0.6 0.5 -1.0', color: '#2196f3' },
+                ],
+                duration: 25,
+                masteryLevel: 2,
+            },
+            'ELEC-002': {
+                title: 'Parallel Circuit Configuration',
+                li: 'Students will design a parallel circuit and measure how voltage remains constant across branches.',
+                components: [
+                    { type: 'battery', pos: '0 0.8 0', color: '#d32f2f' },
+                    { type: 'bulb', pos: '-0.8 0.3 -1.2', color: '#ffd600' },
+                    { type: 'bulb', pos: '0.8 0.3 -1.2', color: '#ffd600' },
+                    { type: 'wire', start: '0 0.8 0', end: '-0.8 0.6 -0.8', color: '#2196f3' },
+                    { type: 'wire', start: '-0.8 0.3 -1.2', end: '0.8 0.3 -1.2', color: '#2196f3' },
+                ],
+                duration: 30,
+                masteryLevel: 3,
+            },
+        };
+        
+        // ============================================
+        // AR SETUP
+        // ============================================
+        const marker = document.getElementById('marker');
+        const labRoot = document.getElementById('lab-root');
+        
+        window.addEventListener('camera-init', () => {
+            updateStatus('CAMERA ACTIVE', false);
+            document.getElementById('labMeta').textContent = 'Point camera at printed marker...';
+        });
+        
+        marker.addEventListener('markerFound', () => {
+            state.markerDetected = true;
+            updateStatus('MARKER DETECTED', true);
+            
+            // Detect lab scenario from marker (for prototype, use default)
+            const labId = 'ELEC-001'; // In production, decode from marker QR or metadata
+            loadLabScenario(labId);
+        });
+        
+        marker.addEventListener('markerLost', () => {
+            state.markerDetected = false;
+            updateStatus('MARKER LOST', false);
+            document.getElementById('labMeta').textContent = 'Re-center the marker...';
+        });
+        
+        // ============================================
+        // LAB SCENARIO LOADER
+        // ============================================
+        function loadLabScenario(labId) {
+            const scenario = labScenarios[labId];
+            if (!scenario) {
+                showNotification(`Lab ${labId} not found.`, 'error');
+                return;
+            }
+            
+            state.labId = labId;
+            state.labScenario = scenario;
+            state.startTime = Date.now();
+            
+            // Update UI
+            document.getElementById('labTitle').textContent = scenario.title;
+            document.getElementById('labMeta').textContent = `Lab ${labId} • ${scenario.duration} min`;
+            document.getElementById('liText').textContent = scenario.li;
+            
+            // Enable action buttons
+            document.getElementById('quizBtn').disabled = false;
+            document.getElementById('logBtn').disabled = false;
+            
+            // Render 3D components
+            renderLabComponents(scenario.components);
+            
+            showNotification(`${scenario.title} loaded`, 'success');
+        }
+        
+        // ============================================
+        // 3D RENDERING
+        // ============================================
+        function renderLabComponents(components) {
+            // Clear existing
+            labRoot.innerHTML = '';
+            
+            components.forEach(comp => {
+                const el = document.createElement('a-entity');
+                
+                switch (comp.type) {
+                    case 'battery':
+                        el.setAttribute('geometry', 'primitive: cylinder; radius: 0.25; height: 0.8');
+                        el.setAttribute('material', `color: ${comp.color}; emissive: ${comp.color}; emissiveIntensity: 0.3`);
+                        el.setAttribute('position', comp.pos);
+                        el.setAttribute('rotation', '90 0 0');
+                        
+                        // Label
+                        const label = document.createElement('a-text');
+                        label.setAttribute('value', 'POWER');
+                        label.setAttribute('align', 'center');
+                        label.setAttribute('position', '0 0 0.5');
+                        label.setAttribute('rotation', '-90 0 0');
+                        label.setAttribute('scale', '0.4 0.4 0.4');
+                        label.setAttribute('color', 'white');
+                        el.appendChild(label);
+                        break;
+                        
+                    case 'bulb':
+                        el.setAttribute('geometry', 'primitive: sphere; radius: 0.22');
+                        el.setAttribute('material', `color: ${comp.color}; emissive: ${comp.color}; emissiveIntensity: 0.8`);
+                        el.setAttribute('position', comp.pos);
+                        
+                        // Point light
+                        const light = document.createElement('a-light');
+                        light.setAttribute('type', 'point');
+                        light.setAttribute('intensity', '0.7');
+                        light.setAttribute('color', comp.color);
+                        el.appendChild(light);
+                        break;
+                        
+                    case 'wire':
+                        const [sx, sy, sz] = comp.start.split(' ').map(Number);
+                        const [ex, ey, ez] = comp.end.split(' ').map(Number);
+                        const mx = (sx + ex) / 2, my = (sy + ey) / 2, mz = (sz + ez) / 2;
+                        const dx = ex - sx, dy = ey - sy, dz = ez - sz;
+                        const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                        
+                        el.setAttribute('geometry', `primitive: cylinder; radius: 0.04; height: ${len}`);
+                        el.setAttribute('material', `color: ${comp.color}`);
+                        el.setAttribute('position', `${mx} ${my} ${mz}`);
+                        
+                        // Rotation to point from start to end
+                        const yaw = Math.atan2(dx, dz) * 180 / Math.PI;
+                        const pitch = Math.atan2(dy, Math.sqrt(dx*dx + dz*dz)) * 180 / Math.PI;
+                        el.setAttribute('rotation', `${pitch} ${yaw} 0`);
+                        break;
+                }
+                
+                labRoot.appendChild(el);
+            });
+        }
+        
+        // ============================================
+        // USER ACTIONS
+        // ============================================
+        function captureEvidence() {
+            if (!state.markerDetected) {
+                showNotification('Please center the marker in frame', 'error');
+                return;
+            }
+            
+            state.evidenceCaptured = true;
+            document.getElementById('captureBtn').textContent = '✓ Evidence Saved';
+            document.getElementById('captureBtn').classList.add('btn-success');
+            document.getElementById('captureBtn').disabled = true;
+            
+            showNotification('Lab evidence captured', 'success');
+        }
+        
+        function triggerAdaptiveQuiz() {
+            if (!state.labScenario) {
+                showNotification('Load a lab first', 'error');
+                return;
+            }
+            document.getElementById('quizModal').classList.add('active');
+        }
+        
+        function confirmQuizLaunch() {
+            closeModal('quizModal');
+            
+            // In production, this would:
+            // 1. POST to adaptive testing API with { labId, studentId, masteryLevel }
+            // 2. Receive back a quiz session ID
+            // 3. Redirect or iframe the quiz
+            
+            const quizSessionId = 'QUIZ_' + Date.now();
+            console.log('Quiz session initiated:', quizSessionId);
+            console.log('Lab:', state.labScenario.title);
+            console.log('Mastery Level:', state.labScenario.masteryLevel);
+            
+            showNotification('Quiz engine would launch here (API integration)', 'success');
+        }
+        
+        function logToSheet() {
+            if (!state.labScenario || !state.evidenceCaptured) {
+                showNotification('Capture evidence first', 'error');
+                return;
+            }
+            
+            const duration = Math.round((Date.now() - state.startTime) / 1000 / 60);
+            const logEntry = {
+                timestamp: new Date().toISOString(),
+                labId: state.labId,
+                studentId: state.studentId || 'STUDENT_001',
+                labTitle: state.labScenario.title,
+                durationMinutes: duration,
+                evidenceCaptured: true,
+                masteryLevel: state.labScenario.masteryLevel,
+            };
+            
+            console.log('Log entry to Sheets:', logEntry);
+            
+            // In production:
+            // fetch('YOUR_GOOGLE_SHEETS_API_ENDPOINT', {
+            //     method: 'POST',
+            //     body: JSON.stringify(logEntry),
+            //     headers: { 'Authorization': `Bearer ${state.apiKey}` }
+            // })
+            
+            document.getElementById('resultTitle').textContent = 'Lab Logged ✓';
+            document.getElementById('resultText').textContent = `${state.labScenario.title} logged for ${duration} minutes.`;
+            document.getElementById('resultModal').classList.add('active');
+        }
+        
+        // ============================================
+        // UTILITIES
+        // ============================================
+        function updateStatus(text, active) {
+            document.getElementById('statusText').textContent = text;
+            document.getElementById('statusInd').classList.toggle('active', active);
+        }
+        
+        function showNotification(msg, type = 'success') {
+            const notif = document.createElement('div');
+            notif.className = `notification ${type === 'error' ? 'error' : ''}`;
+            notif.textContent = msg;
+            document.body.appendChild(notif);
+            
+            setTimeout(() => notif.remove(), 3000);
+        }
+        
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+        
+        // Allow closing modal by clicking outside
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) {
+                e.target.classList.remove('active');
+            }
+        });
+    </script>
+</body>
+</html>
